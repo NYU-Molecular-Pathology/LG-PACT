@@ -1,16 +1,16 @@
-# NGS580-nf
+# NGS-LG-PACT
 
-Target exome analysis for 580 gene panel (NGS580)
+Target exome analysis for 607 gene panel (NGS607)
 
 __NOTE:__ Details listed here may change during development
 
 ## Overview
 
-This pipeline is designed to run targeted exome analysis on Illumina Next-Gen sequencing genomic data, in support of the NGS580 cancer diagnostic panel for NYU's Molecular Pathology Department.
+This pipeline is designed to run targeted exome analysis on Illumina Next-Gen sequencing genomic data, in support of the NGS607 cancer diagnostic panel for NYU's Molecular Pathology Department.
 
 This pipeline starts from paired-end fastq data (`.fastq.gz`), and is meant to accompany the output from the Illumina demultiplexing pipeline listed here: https://github.com/NYU-Molecular-Pathology/demux-nf.
 
-The NGS580-nf analysis workflow includes read trimming, QC, alignment, variant calling, annotation, and reporting, along with many other steps.
+The NGS-LG-PACT analysis workflow includes read trimming, QC, alignment, variant calling, annotation, and reporting, along with many other steps.
 
 ## Contents
 
@@ -159,7 +159,7 @@ make samplesheet
 
 ### Sample Pairs (Optional)
 
-The NGS580-nf pipeline has special processing for tumor-normal pairs. These pairs should be defined in the `samples.analysis.tsv` file, by listing the matched Normal sample for each applicable sample.
+The NGS-LG-PACT pipeline has special processing for tumor-normal pairs. These pairs should be defined in the `samples.analysis.tsv` file, by listing the matched Normal sample for each applicable sample.
 
 In order to update `samples.analysis.tsv` automatically with these sample pairs, an extra samplesheet can be provided with the tumor-normal pairs.
 
