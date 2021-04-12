@@ -10,7 +10,7 @@ This pipeline is designed to run targeted exome analysis on Illumina Next-Gen se
 
 This pipeline starts from paired-end fastq data (`.fastq.gz`), and is meant to accompany the output from the Illumina demultiplexing pipeline listed here: https://github.com/NYU-Molecular-Pathology/demux-nf.
 
-The NGS-LG-PACT analysis workflow includes read trimming, QC, alignment, variant calling, annotation, and reporting, along with many other steps.
+The NGS-LG-PACT analysis workflow includes read trimming, run/sample quality control, alignment, variant calling, annotation, and reporting, along with many other steps.
 
 ## Contents
 
@@ -57,8 +57,8 @@ Some key components that are created during setup, configuration, and execution 
 This repository should first be cloned from GitHub:
 
 ```
-git clone --recursive https://github.com/NYU-Molecular-Pathology/NGS580-nf.git
-cd NGS580-nf
+git clone --recursive https://github.com/NYU-Molecular-Pathology/NGS-LG-PACT.git
+cd NGS-LG-PACT
 ```
 
 - Once a copy of the repo is made, it can be used to "deploy" new copies of the workflow in a pre-configured state
@@ -116,7 +116,7 @@ The easiset way to use the pipeline is to "deploy" a new instance of it based on
 The pipeline can also deploy a new, pre-configured copy of itself using the included `deploy` recipe:
 
 ```
-make deploy PRODDIR=/path/to/NGS580_analyses RUNID=Name_for_analysis FASTQDIR=/path/to/fastq_files
+make deploy PRODDIR=/path/to/NGS607_analyses RUNID=Name_for_analysis FASTQDIR=/path/to/fastq_files
 ```
 
 - An optional argument `DEMUX_SAMPLESHEET` can be used to provide a specially formatted demultiplexing samplesheet to be used for extracting extra sample information (example included at `example/demux-SampleSheet.csv`; note the extra columns labeling tumor-normal pair IDs, used later).
