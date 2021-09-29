@@ -41,18 +41,19 @@ params.GIT_RECENT_TAG = "none"
 
 // default config values
 def defaultParams = [:]
-defaultParams.runID = "NGS580_run"
-defaultParams.workflowLabel = "NGS580"
-defaultParams.numTargetSplitLines = 50
-defaultParams.targetsBed = "targets/targets.580.bed"
-defaultParams.targetsAnnotatedBed = "targets/targets.annotated.580.bed"
+defaultParams.runID = "NGS607_run"
+defaultParams.workflowLabel = "NGS607"
+defaultParams.numTargetSplitLines = 5
+defaultParams.targetsBed = "targets/targets.629.bed"
+defaultParams.targetsAnnotatedBed = "targets/targets.annotated.629.bed"
 defaultParams.projectDir = "${workflow.projectDir}"
 defaultParams.samplesheet = "samples.analysis.tsv"
+defaultParams.demuxSamplesheet.csv = "demux-samplesheet.csv"
 defaultParams.SeraCareSelectedTsv = "data/SeraCare-selected-variants.tsv"
 defaultParams.SeraCareErrorRate = 0.02
-defaultParams.CNVPool = "ref/CNV-Pool/CNV-Pool.580.cnn"
-defaultParams.HapMapBam = "ref/HapMap-Pool/HapMap-pool.bam"
-defaultParams.HapMapBai = "ref/HapMap-Pool/HapMap-pool.bam.bai"
+defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
+defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
+defaultParams.HapMapBai = "ref/HapMap-Pool/NGS607/HapMap-pool.bam.bai"
 
 // load the JSON config, if present
 def externalConfig
@@ -90,6 +91,7 @@ def targetsBed = params.targetsBed
 def targetsAnnotatedBed = params.targetsAnnotatedBed
 def runID = params.runID
 def samplesheet = params.samplesheet
+def demuxSamplesheet = params.demuxSamplesheet
 def SeraCareSelectedTsv = params.SeraCareSelectedTsv
 def SeraCareSelectedTsvFile = new File("${SeraCareSelectedTsv}").getName()
 def SeraCareErrorRate = params.SeraCareErrorRate
@@ -117,6 +119,7 @@ def signatures_weights_file = filemap.files.signatures_weights_file
 def targets_annotations_file = filemap.files.targets_annotations_file
 def tmb_file = filemap.files.tmb_file
 def git_json = filemap.files.git_json
+def callable_loci_file = filemap.files.callable_loci_file
 def snp_overlap_file = filemap.files.snp_overlap_file
 def outputDirPath = new File(params.outputDir).getCanonicalPath()
 def reportDirPath = new File(params.reportDir).getCanonicalPath()
@@ -171,6 +174,7 @@ log.info "* uname:              ${uname}"
 log.info "* Launch time:        ${workflowTimestamp}"
 log.info "* Run ID:             ${runID}"
 log.info "* Samplesheet:        ${samplesheet}"
+log.info "* demuxSamplesheet:   ${demuxSamplesheet}"
 log.info "* Targets:            ${targetsBed}"
 log.info "* Project dir:        ${workflow.projectDir}"
 log.info "* Launch dir:         ${workflow.launchDir}"
@@ -3392,6 +3396,29 @@ process callable_loci_table {
     callable-loci-table.py "${summary}" "${tmpFile}"
     paste-col.py -i "${tmpFile}" --header "Sample" -v "${sampleID}" > "${output_summary}"
     grep 'CALLABLE' "${tmpFile}" | cut -f2 > "${output_txt}"
+    """
+}
+
+callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
+.set { sample_loci_collected}
+Channel.fromPath( file(demuxSamplesheet) ).set { demux_sample_sheet }
+
+process caller_variants_tmb {
+    publishDir "${params.outputDir}/", mode: 'copy'
+
+    input:
+    set file(anno_tsv) from anno_tab_by_caller
+    set file(sample_loci) from sample_loci_collected
+    set file(sample_sheet) from demux_sample_sheet
+
+    output:
+    file("${tmb_tsv}")
+
+    script:
+    //annotations.MuTect2.tsv
+    tmb_tsv = "annotations.paired.tmb.tsv"
+    """
+    calculate_TMB.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
     """
 }
 
