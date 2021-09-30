@@ -3384,7 +3384,7 @@ process callable_loci_table {
     set val(sampleID), file(summary) from called_loci
 
     output:
-    file("${output_summary}") into loci_tables
+    file("${output_summary}") into (loci_tables, callable_locations)
     set val(sampleID), file("${output_summary}"), file("${output_txt}") into loci_tables2
 
     script:
