@@ -102,7 +102,7 @@ def projectDir = params.runID
 disable_multiqc = true // for faster testing of the rest of the pipeline
 disable_msisensor = true // breaks on very small demo datasets
 disable_eval_pair_vcf = true
-disable_varscan2 = false
+disable_varscan2 = true
 
 // load a mapping dict to use for keeping track of the names and suffixes for some files throughout the pipeline
 String filemapJSON = new File("filemap.json").text
