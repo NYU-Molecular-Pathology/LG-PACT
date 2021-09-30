@@ -8,8 +8,8 @@ TIMESTAMP:=$(shell date +%s)
 TIMESTAMP_str:=$(shell date +"%Y-%m-%d-%H-%M-%S")
 ABSDIR:=$(shell python -c 'import os; print(os.path.realpath("."))')
 DIRNAME:=$(shell python -c 'import os; print(os.path.basename(os.path.realpath(".")))')
-REMOTE_ssh:=git@github.com:NYU-Molecular-Pathology/NGS580-nf.git
-REMOTE_http:=https://github.com/NYU-Molecular-Pathology/NGS580-nf.git
+REMOTE_ssh:=git@github.com:NYU-Molecular-Pathology/LG-PACT.git
+REMOTE_http:=https://github.com/NYU-Molecular-Pathology/LG-PACT.git
 .PHONY: annovar_db ref
 
 # no default action
@@ -122,7 +122,7 @@ DEMUX_SAMPLESHEET_output:=demux-samplesheet.csv
 RUNID:=
 # location of production deployment for analysis
 # NYUMC Big Purple directory location
-PRODDIR:=/gpfs/data/molecpathlab/production/NGS580
+PRODDIR:=/gpfs/data/molecpathlab/production/NGS607
 deploy:
 	@$(MAKE) check-runid
 	@$(MAKE) check-fastqdir
@@ -140,7 +140,7 @@ deploy:
 	$(MAKE) config CONFIG_OUTPUT="$${output_dir}/config.json" && \
 	[ -e "$(DEMUX_SAMPLESHEET_output)" ] && echo ">>> Adding demux samplesheet to config" && $(MAKE) config DEMUX_SAMPLESHEET="$(DEMUX_SAMPLESHEET_output)" CONFIG_OUTPUT="$${output_dir}/config.json" || : \
 	[ -e "$(DEMUX_SAMPLESHEET_output)" ] && $(MAKE) pairs PAIRS_SHEET="$(DEMUX_SAMPLESHEET_output)" PAIRS_MODE=demux
-	printf ">>> NGS580 analysis directory prepared: $${output_dir}\n"
+	printf ">>> NGS607 analysis directory prepared: $${output_dir}\n"
 
 CONFIG_INPUT:=.config.json
 CONFIG_OUTPUT:=config.json
@@ -324,7 +324,7 @@ run-power: install
 
 
 # submit the parent Nextflow process to phoenix HPC as a cluster job
-SUBJOBNAME:=NGS580-$(DIRNAME)
+SUBJOBNAME:=NGS607-$(DIRNAME)
 SUBLOG:=$(LOGDIRABS)/slurm-%j.$(LOGFILEBASE)
 SUBQ:=intellispace
 SUBTIME:=--time=5-00:00:00
