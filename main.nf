@@ -3041,7 +3041,7 @@ process annotate {
     set val(caller), val(type), val(sampleID), file(sample_vcf), file(sample_tsv), file(annovar_db_dir) from samples_vcfs_tsvs_good.combine(annovar_db_dir)
 
     output:
-    file("${annotations_tsv}") into annotations_tables
+    file("${annotations_tsv}") into (annotations_tables, anno_tab_by_caller)
     set val(sampleID), val(caller), val(type), file("${annotations_tsv}") into annotations_annovar_tables
     set val(caller), val(type), val(sampleID), file("${annotations_tsv}") into (annotations_annovar_tables2, annotations_annovar_tables3, annotations_annovar_tables4, annotations_annovar_tables5)
     file("${avinput_file}")
