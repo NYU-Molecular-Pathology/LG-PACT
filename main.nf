@@ -3041,7 +3041,7 @@ process annotate {
     set val(caller), val(type), val(sampleID), file(sample_vcf), file(sample_tsv), file(annovar_db_dir) from samples_vcfs_tsvs_good.combine(annovar_db_dir)
 
     output:
-    file("${annotations_tsv}") into (annotations_tables, anno_tab_by_caller)
+    file("${annotations_tsv}") into annotations_tables
     set val(sampleID), val(caller), val(type), file("${annotations_tsv}") into annotations_annovar_tables
     set val(caller), val(type), val(sampleID), file("${annotations_tsv}") into (annotations_annovar_tables2, annotations_annovar_tables3, annotations_annovar_tables4, annotations_annovar_tables5)
     file("${avinput_file}")
@@ -3314,7 +3314,7 @@ process split_annotation_table_paired {
     file("annotations.tsv") from all_annotations_file_ch4
 
     output:
-    file("${output_paired}")
+    file("${output_paired}") into anno_tab_by_caller
     file("${output_unpaired}")
 
     script:
@@ -3384,18 +3384,21 @@ process callable_loci_table {
     set val(sampleID), file(summary) from called_loci
 
     output:
-    file("${output_summary}") into (loci_tables, callable_locations)
+    file("${output_summary}") into loci_tables
     set val(sampleID), file("${output_summary}"), file("${output_txt}") into loci_tables2
+    set file("${loci_output_txt}") into callable_locations
 
     script:
     prefix = "${sampleID}"
     output_summary = "${prefix}.CallableLoci.summary.tsv"
     output_txt = "${prefix}.CallableLoci.txt"
+    loci_output_txt = "${prefix}.callable_loci.out"
     tmpFile = "tmp"
     """
     callable-loci-table.py "${summary}" "${tmpFile}"
     paste-col.py -i "${tmpFile}" --header "Sample" -v "${sampleID}" > "${output_summary}"
     grep 'CALLABLE' "${tmpFile}" | cut -f2 > "${output_txt}"
+    grep 'CALLABLE' "${output_summary}" | cut -f2,3 > "${loci_output_txt}"
     """
 }
 

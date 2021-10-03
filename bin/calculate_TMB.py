@@ -79,7 +79,7 @@ def main():
             loci_dict[items[1]] = items[0]
     with open(args.sample_sheet) as fs:
         for line in fs.readlines()[20:]:
-            items = line.split("\t")
+            items = line.split(",")
             if items[0].endswith(tuple(excl_list)) or items[2] == "NA": continue
             sample_dict[items[0]] = items[-3].strip()
             print(items[0], items[-3].strip())
