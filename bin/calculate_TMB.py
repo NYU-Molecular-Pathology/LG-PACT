@@ -13,12 +13,12 @@ Additional criteria:
 For both matched and unmatched we will apply the following criteria:
 1- VAF >5%
 2- coverage > 200X.
-3- include SNV only including synonymous and Non Synonymous.
-4- exclude Cosmic HS (not apply)
-5- include only exonic.
+3- include only Non Synonymous SNV.
+4- include only exonic.
 
 For Unmatched. Add condition below;
-6- Frequency of <0.4% in exAc.
+5- exclude Cosmic HS
+6- Frequency of <0.4% in ExAC.
 """
 
 NA_strs = ['.'] # strings used as "NA" values in the table
