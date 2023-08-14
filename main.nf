@@ -46,11 +46,15 @@ defaultParams.workflowLabel = "NGS607"
 defaultParams.numTargetSplitLines = 50
 defaultParams.targetsBed = "targets/targets.629.bed"
 defaultParams.targetsAnnotatedBed = "targets/targets.annotated.629.bed"
+defaultParams.baitintervals = "targets/bait.interval_list"
+defaultParams.targetintervals = "targets/targets.interval_list"
 defaultParams.projectDir = "${workflow.projectDir}"
 defaultParams.samplesheet = "samples.analysis.tsv"
 defaultParams.demuxSamplesheet = "demux-samplesheet.csv"
+defaultParams.sampleTumorNormalCsv = "samples.tumor.normal.csv"
 defaultParams.SeraCareSelectedTsv = "data/SeraCare-selected-variants.tsv"
 defaultParams.SeraCareErrorRate = 0.02
+defaultParams.SeraCareSelectedVariantsdisTsv = "data/SeraCare-selected-variants-dist.tsv"
 defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
 defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
 defaultParams.HapMapBai = "ref/HapMap-Pool/NGS607/HapMap-pool.bam.bai"
@@ -89,11 +93,15 @@ def HapMapBam = params.HapMapBam
 def HapMapBai = params.HapMapBai
 def targetsBed = params.targetsBed
 def targetsAnnotatedBed = params.targetsAnnotatedBed
+def baitintervals = params.baitintervals
+def targetintervals = params.targetintervals
 def runID = params.runID
 def samplesheet = params.samplesheet
 def demuxSamplesheet = params.demuxSamplesheet
+def sampleTumorNormalCsv = params.sampleTumorNormalCsv
 def SeraCareSelectedTsv = params.SeraCareSelectedTsv
 def SeraCareSelectedTsvFile = new File("${SeraCareSelectedTsv}").getName()
+def SeraCareSelectedVariantsdisTsv = params.SeraCareSelectedVariantsdisTsv
 def SeraCareErrorRate = params.SeraCareErrorRate
 def CNVPool = params.CNVPool
 def projectDir = params.runID
@@ -193,6 +201,9 @@ log.info "* Launch command:\n${workflow.commandLine}\n"
 // targets .bed file
 Channel.fromPath( file(targetsBed) ).set{ targets_bed } // TODO: why is this here? duplicated..
 Channel.fromPath( file(targetsAnnotatedBed) ).set{ targets_annotated_bed }
+
+Channel.fromPath( file(baitintervals) ).set{ bait_intervals }
+Channel.fromPath( file(targetintervals) ).set{ target_intervals }
 
 // reference files
 Channel.fromPath( file(targetsBed) ).into { targets_bed;
@@ -413,6 +424,7 @@ sampleIDs3.filter {
 }.set { seracare_sample_ids }
 
 Channel.fromPath( "${SeraCareSelectedTsv}").into { seracare_selected_tsv; seracare_selected_tsv2 }
+Channel.fromPath( file(SeraCareSelectedVariantsdisTsv)).into {seracare_selected_variants_dist_tsv; seracare_selected_variants_dist_tsv2}
 Channel.fromPath("${CNVPool}").set { cnv_pool_ch }
 Channel.fromPath( file(samplesheet) ).set { samples_analysis_sheet }
 
@@ -1172,9 +1184,39 @@ samples_dd_ra_rc_bam.combine(ref_fasta2)
                             samples_dd_ra_rc_bam_ref7;
                             samples_dd_ra_rc_bam_ref8;
                             samples_dd_ra_rc_bam_ref9;
-                            samples_dd_ra_rc_bam_ref10 }
+                            samples_dd_ra_rc_bam_ref10;
+                            samples_dd_ra_rc_bam_ref11 }
 
+samples_dd_ra_rc_bam_ref11.combine(bait_intervals)
+                          .combine(target_intervals)
+                          .into { samples_dd_ra_rc_bam_ref_intervals; samples_dd_ra_rc_bam_ref_intervals2  }
 
+process gatk_CollectHsMetrics {
+    // gatk CollectHsMetrics for dd_ra_rc bams 
+    publishDir "${params.outputDir}/CollectHsMetrics", mode: 'copy'
+
+    input:
+    set val(sampleID), file(ra_rc_bam_file), file(ra_rc_bai_file), file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed), file(bait_interval), file(target_interval) from samples_dd_ra_rc_bam_ref_intervals
+
+    output:
+    set val(sampleID), file("${hsmetric_output}"), file("${per_target_coverage_output}") into hsmetric_pertargcoverage
+
+    script:
+    prefix = "${sampleID}"
+    hsmetric_output = "${prefix}_hs_metrics.txt"
+    per_target_coverage_output = "${prefix}_PerTargetCoverage.txt"
+    """
+    gatk CollectHsMetrics \
+    -I "${ra_rc_bam_file}" \
+    -O "${hsmetric_output}" \
+    -BI "${bait_interval}" \
+    -TI "${target_interval}" \
+    -R "${ref_fasta}" \
+    --PER_TARGET_COVERAGE "${per_target_coverage_output}"
+    """
+
+}
+                         
 samples_dd_ra_rc_bam_ref.combine( dbsnp_ref_vcf3 )
                         .combine(dbsnp_ref_vcf_idx3)
                         .into { samples_dd_ra_rc_bam_ref_dbsnp;
@@ -3316,6 +3358,7 @@ process split_annotation_table_paired {
     output:
     file("${output_paired}") into anno_tab_by_caller
     file("${output_unpaired}")
+    val(output_unpaired) into done_split_annotation_table_paired
 
     script:
     output_paired = "annotations.paired.tsv"
@@ -3404,7 +3447,8 @@ process callable_loci_table {
 
 callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
 .set { sample_loci_collected}
-Channel.fromPath( file(demuxSamplesheet) ).set { demux_sample_sheet }
+Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2 }
+Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2}
 
 process caller_variants_tmb {
     publishDir "${params.outputDir}/", mode: 'copy'
@@ -4705,9 +4749,10 @@ done_copy_samplesheet.concat(
     done_update_samtools_dedup_flagstat_table,
     done_update_updated_coverage_tables_collected,
     done_update_collect_annotation_tables,
-    done_update_updated_coverage_interval_tables_collected
+    done_update_updated_coverage_interval_tables_collected,
+    done_split_annotation_table_paired
     )
-    .set { all_done }
+    .into { all_done; all_done2 }
 
 
 // collect failed log messages
@@ -4905,6 +4950,40 @@ process multiqc {
     multiqc "${output_dir}"
     mv "${multiqc_html}" "${output_html}"
     mv "${multiqc_data}" "${output_data}"
+    """
+}
+
+process run_qc {
+    // RUN QC, Variant QC, Scatter plot QC, CollectHsMetrics QC
+    
+    input:
+    val(all_vals) from all_done2.collect()
+    file(demuxSamplesheet) from demux_sample_sheet2
+    file(sampleTumorNormalCsv) from sample_Tumor_Normal_sheet
+    file(seracare_selected_variants_dist) from seracare_selected_variants_dist_tsv
+
+    script:
+    """
+    pactid="\$(cat ${demuxSamplesheet} | sed -n '4p' | awk -F ',' '{print \$2}')" 
+    runid="\$(echo ${PWD} | tr '/' '\n' | tail -n 1)"
+
+    # run snp overlap
+    snp_overlap.py -o "${PWD}/output"
+
+    # generate Run QC
+    generate_html_report.py -o "${PWD}/" -p "\${pactid}" -r "\${runid}" -s ${seracare_selected_variants_dist}
+
+    # variants QC
+    variants_qc.py -rid "\${runid}" -rdir "${PWD}/output" -pactid "\${pactid}"
+
+    # scatter plot 3 callers
+    scatter_pactqc.py -rdir "${PWD}/output" -pactid "\${pactid}"
+
+    # CollectHsmetric qc
+    hsmetrics_summary.py -rdir "${PWD}/" -tnss ${sampleTumorNormalCsv}
+
+    # Hotspot qc
+    detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
     """
 }
 
