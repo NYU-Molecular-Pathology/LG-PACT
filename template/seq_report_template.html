@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NGS Sequencing QC Metrics</title>
+    <style>
+        #myInput {
+          width: 45%;
+          font-size: 12px;
+          padding: 6px 14px 6px 32px;
+          border: 1px solid #ddd;
+          margin-bottom: 3px;
+        }
+        table {
+          font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+          font-size: 10pt;
+          border-collapse: collapse;
+          width: 100%;
+        }
+
+        table td {
+          border: 1px solid #ddd;
+          padding: 3px;
+        }
+
+        table th {
+          padding-top: 6px;
+          padding-bottom: 6px;
+          text-align: left;
+          background-color: lightskyblue;
+          color: white;
+        }
+
+        table tr:nth-child(even){background-color: #f2f2f2;}
+
+        table tr:hover {background-color: #ddd;}
+
+        table td.red {color: #e76e6e;}
+        table td.chocolate {color: #d2691e;}
+        table td.green {color: #5da328;}
+        table td:first-child{ width: 2%; }
+        table td:last-child{ width: 20%; }
+        ul {
+        columns: 2;
+        -webkit-columns: 2;
+        -moz-columns: 2;
+        }
+        h3 { text-align: center; }
+        i.fas {
+            vertical-align: middle;
+        }​
+    </style>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css" integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+</head>
+<body>
+    <div>
+    <h3><i class='fas fa-tasks' style="font-size:16px;color:dodgerblue;padding-right:2px"></i>Sequencing Quality Control (QC) Metrics for {{ caseID }} [ {{ run }} ]
+    </h3><hr />
+    <span>Reads are aligned with BWA (H. 2013) and deduplicated with Sambamba (Tarasov et al. 2015).
+        Unique deduplicated reads are used for downstream analysis. Sequencing QC metrics are as following:
+    </span>
+    <ul style="list-style-type:none;">
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Total number of reads > 10 million.</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Number of deduplicated mapped reads >10 million</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Number of targets with <50 coverage < 1%</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Average and median coverage of the sample >300X</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Tumor and Normal should show >= 90% overlapped homozygous SNPs.</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>NTC: < 30,000 total reads (<5X)</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Negative control (HapMap): Overall coverage >300X and less than 2% of private variants detected at coverage great than 200X and VAF less than 5%</li>
+        <li><i class="fas fa-check-double" style="font-size:13px;color:dodgerblue;padding-right:2px"></i>Positive control (Seraseq Tri-Level Tumor Mutation DNA Mix v2 High Concentration): great than 95% of 35 variations monitored in the SC/PC have VAF within Mean± 2SD</li>
+    </ul><hr />
+    <div>
+        <span style="font-weight:bold">Run QC:</span>
+        <table>
+            <tr>
+                {% for column in run_df.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for idx, row in run_df.iterrows() %}
+            <tr>
+                {% for colname in run_df.columns %}
+                {% if  "Fail" in row[colname] %}
+                    <td class="chocolate">{{ row[colname] | replace("Fail","<i class='fa fa-exclamation'></i>(manual review required)")}}</td>
+                {% elif "Pass" in row[colname] %}
+                    <td class="green">{{ row[colname] | replace("Pass","<i class='fas fa-check'></i>") }}</td>
+                {% else %}
+                    <td>{{ row[colname] }}</td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <div style="padding-top: 6px">
+        <span style="font-weight:bold">Sample QC:</span>
+        <input type="text" id="myInput" onkeyup='mySearch("myInput","metrics")' placeholder="Search for samples..." title="Type in a sample name">
+        <i class="fas fa-search" style="font-size:24px;color:dodgerblue"></i>
+        <table id="metrics">
+            <tr>
+                {% for column in df.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for idx, row in df.iterrows() %}
+            <tr>
+                {% for colname in df.columns %}
+                {% if  "Fail" in row[colname] %}
+                    <td class="chocolate">{{ row[colname] |replace("Fail", "<i class='fa fa-exclamation'></i>(manual review required)") }}</td>
+                {% elif "Pass" in row[colname] %}
+                    <td class="green">{{ row[colname] | replace("Pass", "<i class='fas fa-check'></i>")}}</td>
+                {% else %}
+                    <td>{{ row[colname] }}</td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+      <div style="padding-top: 6px">
+        <span style="font-weight:bold">Seraseq Tri-Level Tumor Mutation:</span>
+        <input type="text" id="myVarInput" onkeyup='mySearch("myVarInput","seraMetrics")' placeholder="Search for genes..." title="Type in a sample name">
+        <i class="fas fa-search" style="font-size:24px;color:dodgerblue"></i>
+        <table id="seraMetrics">
+            <tr>
+                {% for column in seracare.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for idx, row in seracare.iterrows() %}
+            <tr>
+                {% for colname in seracare.columns %}
+                {% if  colname == 'Detected' and  row[colname] == True%}
+                    <td class="green"><i class="fas fa-check"></i></td>
+                {% elif colname == 'Detected' and row[colname] == 0%}
+                    <td class="chocolate"><i class="fa fa-exclamation" aria-hidden="true"></i></td>
+                {% else %}
+                    <td>{{ row[colname] }}</td>
+                {% endif %}
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+    <script>
+    function mySearch(myInputID, myTableId) {
+      var input, filter, table, tr, td, i, txtValue;
+      input = document.getElementById(myInputID);
+      filter = input.value.toUpperCase();
+      table = document.getElementById(myTableId);
+      tr = table.getElementsByTagName("tr");
+      for (i = 0; i < tr.length; i++) {
+        td = tr[i].getElementsByTagName("td")[1];
+        if (td) {
+          txtValue = td.textContent || td.innerText;
+          if (txtValue.toUpperCase().indexOf(filter) > -1) {
+            tr[i].style.display = "";
+          } else {
+            tr[i].style.display = "none";
+          }
+        }
+      }
+    }
+    </script>
+</body>
+</html>

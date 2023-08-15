@@ -1,0 +1,151 @@
+<html>
+    <head>
+        <title>Germline Variants</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        #myInput {
+          width: 10%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;  
+        }
+          #myGene {
+          width: 10%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;
+        }
+
+        #mylist {
+          background-position: 30px 30px;
+          background-repeat: no-repeat;
+          width: 100%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;
+        }
+        
+        table {
+          border-collapse: collapse;
+          border-spacing: 0;
+          width: 100%;
+          border: 1px solid #ddd;
+        }
+        
+        .passed {
+            color: green;
+            font-weight: bold;
+        }
+
+        th, td {
+          text-align: left;
+          padding: 8px;
+        }
+
+        th {
+          background-color:#99ccff;
+        }
+
+        tr:nth-child(even){background-color: #f2f2f2}
+        
+        h2 {
+            text-align: center;
+        }
+        
+        p {
+            font-size:120%
+        }
+    
+        
+    </style>
+    </head>
+    
+    <body>
+        <!-- qc icons and headings -->
+        <h2><img src="https://cdn0.iconfinder.com/data/icons/project-management-aqua-vol-2/500/Quality_Control_Checklist-512.png" width=35 height=35 align="center"/>Germline Variants - PACT: {{pactid}}, Run: {{runid}} (in-house pipeline)</h2><hr>
+        
+        <p>Variants are identified using LoFreq caller</p>
+        <!-- search icons and headings -->
+              <h3> Filters applied:</h3>
+          
+          <ul><i>
+            <li> Uses Lofreq annotation file </li>
+            <li> Normal Samples only </li>
+            <li> Variant Allele Frequency(VAF) > 30% </li>
+            <li> CLINSIG - Pathogenic and/or has pathogenic or Likely pathogenic or Pathogenic or "." </li>
+            <li> Func.refGene = exonic, upstream and splicing</li>
+            <li> Excludes 'Synonymous SNV' </li></i>
+          </ul>
+          <hr>
+          <div>
+          <h2>Germline Variants (LoFreq) </h2>
+          <img src="https://png.pngtree.com/element_our/png_detail/20181206/find-vector-icon-png_260845.jpg" width=35 height=35 align="center"/>
+
+      <input type="text" id="myInput" onkeyup="myFunction()" placeholder="Search for tumor samples.." title="Type in sample name"> <input type="text" id="myGene" onkeyup="myGene()" placeholder="Search for genes.." title="Type in Gene Name">
+
+          <table id="myTable" class="table table-striped w-auto" data-name="mytable">
+              <tr>
+                  {% for column in germline_variants.columns %}
+                  <th>{{ column }}</th>
+                  {% endfor %}
+              </tr>
+              {% for idx, row in germline_variants.iterrows() %}
+              <tr>
+                  {% for colname in germline_variants.columns %}
+                      {% if row[colname] == "Yes" %}
+                          <td class="passed">{{ row[colname] }}</td>
+                      {% else %}
+                          <td>{{ row[colname] }}</td>
+                      {% endif %}
+              {% endfor %}
+              </tr>
+              {% endfor %}
+          </table>  
+          </div>
+          <hr>
+          
+        <script>
+            function myFunction() {
+        var input, filter, table, tr, td, i,alltables;
+            alltables = document.querySelectorAll("table[data-name=mytable]");
+          input = document.getElementById("myInput");
+          filter = input.value.toUpperCase();
+          alltables.forEach(function(table){
+              tr = table.getElementsByTagName("tr");
+              for (i = 0; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td")[0];
+                if (td) {
+                  if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                  } else {
+                tr[i].style.display = "none";
+              }
+            }       
+          }
+      });
+    }
+            function myGene() {
+        var input, filter, table, tr, td, i,alltables;
+            alltables = document.querySelectorAll("table[data-name=mytable]");
+          input = document.getElementById("myGene");
+          filter = input.value.toUpperCase();
+          alltables.forEach(function(table){
+              tr = table.getElementsByTagName("tr");
+              for (i = 0; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td")[2];
+                if (td) {
+                  if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                  } else {
+                tr[i].style.display = "none";
+              }
+            }       
+          }
+      });
+    }
+        </script>
+    </body>
+</html>

@@ -1,0 +1,168 @@
+<html>
+    <head>
+        <title>Somatic Variants</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        #myInput {
+          width: 10%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;
+        }
+          #myGene {
+          width: 10%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;
+        }
+
+        #mylist {
+          background-position: 30px 30px;
+          background-repeat: no-repeat;
+          width: 100%;
+          font-size: 16px;
+          padding: 10px;
+          border: 1px solid #ddd;
+          margin-bottom: 12px;
+        }
+        
+        table {
+          border-collapse: collapse;
+          border-spacing: 0;
+          width: 100%;
+          border: 1px solid #ddd;
+        }
+
+        @media screen and (min-width: 800px) {
+        table {
+        width: 90%;}
+          }
+        
+        /* if the browser window is at least 1000px-s wide: */
+        @media screen and (min-width: 1000px) {
+        table {
+        width: 80%;}
+        }
+        
+        .passed {
+            color: green;
+            font-weight: bold;
+        }
+
+        th, td {
+          text-align: left;
+          padding: 8px;
+        }
+
+        th {
+          background-color:#99ccff;
+        }
+
+        tr:nth-child(even){background-color: #f2f2f2}
+        
+        h2 {
+            text-align: center;
+        }
+        
+        p {
+            font-size:120%
+        }
+    
+        
+    </style>
+    </head>
+    
+    <body>
+        <!-- qc icons and headings -->
+        <h2><img src="https://cdn0.iconfinder.com/data/icons/project-management-aqua-vol-2/500/Quality_Control_Checklist-512.png" width=35 height=35 align="center"/>Somatic Variants - PACT: {{pactid}}, Run: {{runid}} (in-house pipeline)</h2><hr>
+        
+        <p>Variants are identified using three somatic variant callers <b>MuTect2, Strelka and LofreqSomatic</b> between paired tumor:normal samples</p>
+        <h3> Filters applied:</h3>
+        
+        <ul><i>
+          <li> Tumor Allele Frequency(T.AF) > 5% </li>
+          <li> Normal Allele Frequency(N.AF) &lt; 2%</li>
+          <li> Depth (DP) > 50 </li>
+          <li> Func.refGene = exonic, upstream and splicing</li>
+          <li> Excludes 'Synonymous SNV' </li></i>
+        </ul>
+        <hr>
+        
+        <div>
+        <!-- search icons and headings -->
+            <h2>Somatic Variants from paired samples</h2>
+            <img src="https://png.pngtree.com/element_our/png_detail/20181206/find-vector-icon-png_260845.jpg" width=35 height=35 align="center"/>
+
+            <select id="mySamples" onchange="myDropdownFunction()" class='form-control'>
+              {% for sample in somatic_variants_samples %}
+                  <option value="{{ sample }}">{{ sample }}</option>
+              {% endfor %}
+              </select>
+
+        <input type="text" id="myGene" onkeyup="myGene()" placeholder="Search for genes.." title="Type in Gene Name">
+              
+        <table id="myTable" class="table table-striped w-auto" data-name="mytable">
+            <tr>
+                {% for column in somatic_variants.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for idx, row in somatic_variants.iterrows() %}
+            <tr>
+                {% for colname in somatic_variants.columns %}
+                    {% if row[colname] == "Yes" %}
+                        <td class="passed">{{ row[colname] }}</td>
+                    {% else %}
+                        <td>{{ row[colname] }}</td>
+                    {% endif %}
+            {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>  
+        </div>
+        
+        <hr>
+          
+        <script>
+          function myDropdownFunction() {
+          var input, filter, table, tr, td, i;
+          input = document.getElementById("mySamples");
+          filter = input.value.toUpperCase();
+          table = document.getElementById("myTable");
+          tr = table.getElementsByTagName("tr");
+          for (i = 0; i < tr.length; i++) {
+            td = tr[i].getElementsByTagName("td")[0];
+            if (td) {
+              if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+                tr[i].style.display = "";
+              } else {
+                tr[i].style.display = "none";
+              }
+            }       
+          }
+        }
+
+            function myGene() {
+        var input, filter, table, tr, td, i,alltables;
+            alltables = document.querySelectorAll("table[data-name=mytable]");
+          input = document.getElementById("myGene");
+          filter = input.value.toUpperCase();
+          alltables.forEach(function(table){
+              tr = table.getElementsByTagName("tr");
+              for (i = 0; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td")[3];
+                if (td) {
+                  if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                  } else {
+                tr[i].style.display = "none";
+              }
+            }       
+          }
+      });
+    }
+        </script>
+    </body>
+</html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HSMetrics</title>
+    <style>
+        #myInput {
+          width: 45%;
+          font-size: 12px;
+          padding: 6px 14px 6px 32px;
+          border: 1px solid #ddd;
+          margin-bottom: 3px;
+        }
+        table {
+          font-family: "Trebuchet MS", Arial, Helvetica, sans-serif;
+          font-size: 10pt;
+          border-collapse: collapse;
+          width: 100%;
+        }
+
+        table td {
+          border: 1px solid #ddd;
+          padding: 3px;
+        }
+
+        table th {
+          padding-top: 6px;
+          padding-bottom: 6px;
+          text-align: left;
+          background-color: lightskyblue;
+          color: white;
+        }
+
+        table tr:nth-child(even){background-color: #f2f2f2;}
+
+        table tr:hover {background-color: #ddd;}
+
+        table td.red {color: #e76e6e;}
+        table td.chocolate {color: #d2691e;}
+        table td.green {color: #5da328;}
+        table td:first-child{ width: 2%; }
+        table td:last-child{ width: 20%; }
+        ul {
+        columns: 2;
+        -webkit-columns: 2;
+        -moz-columns: 2;
+        }
+        h3 { text-align: center; }
+        i.fas {
+            vertical-align: middle;
+        }
+        ​#myTable {
+        font-family: Arial, Helvetica, sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      #myTable td, #myTable th {
+        border: 1px solid #ddd;
+        padding: 8px;
+        }
+    </style>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css" integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+</head>
+<body>
+    <div>
+    <h3><i class='fas fa-tasks' style="font-size:16px;color:dodgerblue;padding-right:2px"></i> HS Quality Metrics</h3><hr />
+
+    <div style="padding-top: 6px">
+        <span style="font-weight:bold">Sample:</span>
+        <input type="text" id="myInput" onkeyup="mySearch()" placeholder="Search for samples..." title="Type in a sample name">
+        <i class="fas fa-search" style="font-size:18px;color:dodgerblue"></i>
+        <table id="myTable" class="table table-striped w-auto" data-name="mytable">
+            <tr>
+                {% for column in datahs.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+            {% for idx, row in datahs.iterrows() %}
+            <tr>
+                {% for colname in datahs.columns %}
+                    <td>{{ row[colname] }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </table>
+      </div>
+
+    <script>
+      function mySearch() {
+        var input, filter, table, tr, td, i,alltables;
+            alltables = document.querySelectorAll("table[data-name=mytable]");
+          input = document.getElementById("myInput");
+          filter = input.value.toUpperCase();
+          alltables.forEach(function(table){
+              tr = table.getElementsByTagName("tr");
+              for (i = 0; i < tr.length; i++) {
+                td = tr[i].getElementsByTagName("td")[0];
+                if (td) {
+                  if (td.innerHTML.toUpperCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                  } else {
+                tr[i].style.display = "none";
+              }
+            }       
+          }
+      });
+    }
+    </script>
+</body>
+</html>
