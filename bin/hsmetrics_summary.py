@@ -86,8 +86,9 @@ def hsmetric_targetcoverage(rundir_path):
         data_final_df = process_readcount_filter[['SampleID','chrom','start','end','name','mean_coverage','normalized_coverage','read_count']]
         processed_dfs.append(data_final_df)
     perTargCovg_probes = pd.concat(processed_dfs).sort_values(by=["SampleID"])
+    perTargCovg_probes_noNTC = perTargCovg_probes[(perTargCovg_probes["SampleID"]!= "NTC")]
     pertarg_output_path = rundir_path+"output/clinical/"+"PerTargetCoverage.csv"
-    perTargCovg_probes.to_csv(pertarg_output_path,index=False)
+    perTargCovg_probes_noNTC.to_csv(pertarg_output_path,index=False)
 
 
 def main(rundir,tumor_normal_csv):
