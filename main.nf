@@ -55,6 +55,7 @@ defaultParams.sampleTumorNormalCsv = "samples.tumor.normal.csv"
 defaultParams.SeraCareSelectedTsv = "data/SeraCare-selected-variants.tsv"
 defaultParams.SeraCareErrorRate = 0.02
 defaultParams.SeraCareSelectedVariantsdisTsv = "data/SeraCare-selected-variants-dist.tsv"
+defaultParams.reconv_hg19_genomelength = "data/hg19_genome_length_PACT.txt"
 defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
 defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
 defaultParams.HapMapBai = "ref/HapMap-Pool/NGS607/HapMap-pool.bam.bai"
@@ -104,6 +105,7 @@ def SeraCareSelectedTsvFile = new File("${SeraCareSelectedTsv}").getName()
 def SeraCareSelectedVariantsdisTsv = params.SeraCareSelectedVariantsdisTsv
 def SeraCareErrorRate = params.SeraCareErrorRate
 def CNVPool = params.CNVPool
+def reconv_hg19_genomelength = params.reconv_hg19_genomelength
 def projectDir = params.runID
 
 // Enable or disable some pipeline steps here TODO: better config management for this
@@ -285,6 +287,7 @@ Channel.fromPath( file(params.ref_dict) ).into { ref_dict;
     ref_dict20;
     ref_dict21 }
 
+Channel.fromPath( file(params.reconv_hg19_genomelength) ).set{ hg19_reconCNV_genome_PACT }
 Channel.fromPath( file(params.ref_chrom_sizes) ).set{ ref_chrom_sizes }
 Channel.fromPath( file(params.trimmomatic_contaminant_fa) ).set{ trimmomatic_contaminant_fa }
 Channel.fromPath( file(params.ref_fa_bwa_dir) ).set{ ref_fa_bwa_dir }
@@ -3811,6 +3814,7 @@ process cnvkit {
     file("${output_cns}")
     file("${output_finalcnr}")
     set val(comparisonID), val(tumorID), val(normalID), file("${output_cnr}"), file("${output_call_cns}"), file("${segment_gainloss}") into sample_cnvs
+    set val(comparisonID), val(tumorID), val(normalID), file("${output_cnr}"), file("${output_cns}") into reconCNV_cnr_cns
 
     script:
     prefix = "${comparisonID}"
@@ -3848,7 +3852,7 @@ process cnvkit {
 
 // get a copy of the channel to use with the CNV pool
 // combine against the CNV Pool file
-samples_dd_bam5.combine(cnv_pool_ch)
+/*samples_dd_bam5.combine(cnv_pool_ch)
 .map { sampleID, bam, bai, cnv_pool_file ->
     // remap the channel to replace the Normal with CNV Pool
     def cnv_poolID = "CNV-Pool"
@@ -3897,12 +3901,11 @@ process cnvkit_pooled_reference {
     cnvkit.py gainloss "${output_cnr}" -s "${output_call_cns}" -t 0.3 -m 5 > "${segment_gainloss}"
     cnvkit.py gainloss "${output_cnr}" -t 0.3 -m 5 > "${output_finalcnr}"
     """
-}
+}*/
 
 
 // only keep files with at least 1 variant for TMB analysis
-sample_cnvs_pooledreference.mix( sample_cnvs )
-.filter { comparisonID, tumorID, normalID, cnr, call_cns, segment_gainloss ->
+sample_cnvs.filter { comparisonID, tumorID, normalID, cnr, call_cns, segment_gainloss ->
     def count = cnr.readLines().size()
     if (count <= 1) log.warn "${comparisonID} doesn't have enough lines in cnr and will not be processed"
     count > 1
@@ -3955,7 +3958,7 @@ process cnvkit_extract_trusted_genes {
 
     output:
     set val(tumorID), val(normalID), file("${output_final_cns}") into cnvs_cns
-    set val(comparisonID), val(tumorID), val(normalID), file("${output_final_cns}") into (cnvs_cns2, cnvs_cns3)
+    set val(comparisonID), val(tumorID), val(normalID), file("${output_final_cns}") into (cnvs_cns2, cnvs_cns3, cnvs_cns4)
 
 
     script:
@@ -4034,6 +4037,54 @@ process cnvkit_plotly {
     """
     cnvplot.R "${cns}" "${output_html}" "${output_pdf}"
     """
+}
+
+reconCNV_cnr_cns.combine(cnvs_cns4)
+                .filter { item -> 
+                    def comparisonID = item[0]
+                    def tumorID = item[1]
+                    def normalID = item[2]
+                    def cns = item[3]
+                    def cnr = item[4]
+                    def comparisonID_finalcns = item[5]
+                    def tumorID_finalcns = item[6]
+                    def normalID_finalcns = item[7]
+                    def final_cns = item[8]
+                    comparisonID == comparisonID_finalcns
+                    tumorID == tumorID_finalcns
+                    normalID == normalID_finalcns
+                }
+                .map { item ->
+                    def comparisonID = item[0]
+                    def tumorID = item[1]
+                    def normalID = item[2]
+                    def cns = item[3]
+                    def cnr = item[4]
+                    def final_cns = item[8]
+
+                    def pairID = comparisonID
+                    return [ pairID, tumorID, normalID, cns, cnr, final_cns ]
+                 }
+                 .set { reconCNV_inputs_cnr_cns }
+
+reconCNV_inputs_cnr_cns.combine(hg19_reconCNV_genome_PACT)
+                        .set{ reconCNV_inputs }
+
+process reconCNV_plots {
+    publishDir "${params.outputDir}/cnv/reconCNV", mode: 'copy'
+
+    input:
+    set val(comparisonID), val(tumorID), val(normalID), file(output_cnr), file(output_cns), file(output_final_cns), file(hg19_genome_length) from reconCNV_inputs
+
+    output:
+    file("${output_html}")
+
+    script:
+    output_html = "${comparisonID}_reconCNV.html"
+    """
+    python /opt/reconCNV.py -r "${output_cnr}" -x "${hg19_genome_length}" -o "${output_html}" -c /opt/config.json -s "${output_cns}" -g "${output_final_cns}"
+    """
+
 }
 
 process snp_pileup {
@@ -4155,14 +4206,18 @@ process facets {
     output:
       //added for facets summary
     set val(comparisonID), val(tumorID), val(normalID), file("${output_segment}") into (facets_segment_files,facets_segment_files2)
-    file("${output_pdf}")
+    file("${output_png}")
 
     script:
     prefix = "${comparisonID}.${caller}.${callerType}"
     output_segment = "${prefix}.segment.tsv"
     output_pdf = "${prefix}.plot.pdf"
+    output_png = "${prefix}.plot.png"
     """
     facets.R "${snp_pileup_txt}" "${output_pdf}" "${output_segment}"
+
+    ## Convert pdf to png
+    convert -density 300 -quality 100 -alpha off "${output_pdf}" "${output_png}"
     """
 }
 
