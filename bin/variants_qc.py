@@ -5,6 +5,7 @@ import jinja2
 import os,fnmatch,argparse,subprocess
 import pandas as pd
 from urllib.parse import urljoin
+import get_cosmic
 
 ######################### Moving and processing IGV-snapshots dir #############################################
 
@@ -200,8 +201,21 @@ def main(runid,rundir,pactid):
     somatic_demux_merge_final['Tumor'] = sample_name(somatic_demux_merge_final,'Tumor')
     somatic_demux_merge_final['Normal'] = sample_name(somatic_demux_merge_final,'Normal')
     somatic_variants_final = somatic_demux_merge_final[['Test_Number','Tumor','Normal','Gene.refGene','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','AAChange.refGene','Variant','DP','AF','Func.refGene','NORMAL.AF']]
+    
+    ## find per caller annotations to add cosmic info to report ##
+    files_to_find = ['annotations.MuTect2.tsv', 'annotations.Strelka.tsv', 'annotations.LoFreqSomatic.tsv']
+    files_per_caller = [find(file, rundir) for file in files_to_find]
+    cosmic_results = [ get_cosmic.main(caller_file[0]) for caller_file in files_per_caller]
+    cosmic_merged = pd.concat([cosmic_results[0], cosmic_results[1], cosmic_results[2]]).drop_duplicates()
+    ## combine somatic variants df and cosmic variants df ##
+    cosmic_somatic_merge = somatic_variants_final.merge(cosmic_merged,on = 'Variant', how = 'left').fillna(0)
+    cosmic_somatic_merge['COSMIC_Count'] = cosmic_somatic_merge['COSMIC_Count'].astype(int)
+    cosmic_somatic_merge['COSMIC_Count'] = cosmic_somatic_merge['COSMIC_Count'].astype(str).replace('0','None')
+    cosmic_somatic_merge['CosmicID'] = cosmic_somatic_merge['CosmicID'].replace(0,'None')
+    ## Get the required cols for final report ##
+    somatic_cosmic_variants = cosmic_somatic_merge[['Test_Number','Tumor','Normal','Gene.refGene','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','CosmicID','COSMIC_Count','AAChange.refGene','Variant','DP','AF','Func.refGene','NORMAL.AF']]
     somatic_file_out = '%s/%s/%s'% (rundir,"clinical","somatic_variants.csv")
-    somatic_variants_final.to_csv(somatic_file_out, index=False)
+    somatic_cosmic_variants.to_csv(somatic_file_out, index=False)
 
     somatic_variants_samples = somatic_variants_final.Test_Number.unique()
 
@@ -225,7 +239,7 @@ def main(runid,rundir,pactid):
     template_somatic = templateEnv.get_template(TEMPLATE_FILE_SOMATIC)
     template_germline = templateEnv.get_template(TEMPLATE_FILE_GERMLINE)
 
-    html_out_somatic = template_somatic.render(somatic_variants=somatic_variants_final,somatic_variants_samples=somatic_variants_samples,pactid=pactid,runid=runid)
+    html_out_somatic = template_somatic.render(somatic_variants=somatic_cosmic_variants,somatic_variants_samples=somatic_variants_samples,pactid=pactid,runid=runid)
     html_out_germline = template_germline.render(germline_variants=germline_variants,pactid=pactid,runid=runid)
     if not os.path.exists(html_out_path):
         os.mkdir(html_out_path)

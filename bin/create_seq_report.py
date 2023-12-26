@@ -33,6 +33,14 @@ class seq_qc_report:
         else:
             return "%s"%str(round(pcnt,2))+"% Fail"
 
+     # check duplication rate    
+    def check_dup_rate(self, row, cutoff=0.50):
+        dedup_rate = row['Deduplication_Rate']
+        if float( dedup_rate < cutoff):
+            return "%s"%str(round(dedup_rate,2))+" Pass"
+        else:
+            return "%s"%str(round(dedup_rate,2))+" Fail"
+
     # Average and median coverage of the sample
     def check_average_median_coverage(self, row, cutoff=300):
         sample = row["Sample"]
@@ -176,6 +184,9 @@ class seq_qc_report:
         seq_QC_df = sample_mapping_reads.merge(sample_dedup_reads, on="Sample", how='inner')\
                     .merge(sample_coverage_df[['Sample','MeanCoverage','MedianCoverage','50']],
                                    on="Sample",how="inner")
+        seq_QC_df['Deduplication_Rate'] = (1-seq_QC_df['DeduplicatedReads']/seq_QC_df['TotalMappedReads'])
+        seq_QC_df['Deduplication Rate QC'] = seq_QC_df.apply (lambda row: self.check_dup_rate(row), axis=1)
+        seq_QC_df = seq_QC_df[['Sample','TotalMappedReads','Mapped Reads QC','DeduplicatedReads','Deduplicated Reads QC','Deduplication Rate QC','MeanCoverage', 'MedianCoverage','50' ]]
 
         run_QC_df = run_mapping_reads.merge(run_dedup_reads, on="Sample", how='inner')\
                     .merge(run_coverage_df[['Sample','MeanCoverage','MedianCoverage','50']],
