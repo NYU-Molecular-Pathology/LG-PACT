@@ -1,59 +1,12 @@
 #!/usr/bin/env python3
 
-import re
 import jinja2
-import os,fnmatch,argparse,subprocess
+import os
+import argparse
+import fnmatch
 import pandas as pd
 from urllib.parse import urljoin
 import get_cosmic
-
-######################### Moving and processing IGV-snapshots dir #############################################
-
-### Create dirs and move dirs to per caller type ###
-def create_percaller_dirs(runid):
-    dest_dir = "/gpfs/data/sequence/results/external/NYU/snuderllab/igv-snapshots/"
-    full_run_path = '%s%s'% (dest_dir,runid)
-    print(full_run_path)
-    ## make run dir in minio browser ##
-    if not os.path.exists(full_run_path):
-        os.mkdir(full_run_path)
-    each_caller_path = ["MuTect2","Strelka","LoFreqSomatic"] 
-    caller_paths = []
-    for caller in each_caller_path:
-        caller_path = '%s/%s/'% (full_run_path,caller)
-        if not os.path.exists(caller_path):
-            os.mkdir(caller_path)
-        caller_paths.append(caller_path)
-    print("Done creating dirs!!")
-    return caller_paths, full_run_path
-
-    
-def subprocess_cmd(command):
-    p = subprocess.Popen(command,shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    p.wait()
-
-def move_dirs_percaller(rundir):
-    igv_snapshotdir = '%s/%s/'% (rundir,"igv-snapshots")
-    os.chdir(igv_snapshotdir)
-    find_move_Dirs = "find . -maxdepth 1 -type d -name '*MuTect2*' -print0 | xargs -0 -I {} mv {} MuTect2/ | find . -maxdepth 1 -type d -name '*Strelka*' -print0 | xargs -0 -I {} mv {} Strelka/ | find . -maxdepth 1 -type d -name '*LoFreqSomatic*' -print0 | xargs -0 -I {} mv {} LoFreqSomatic/ "
-    subprocess_cmd(find_move_Dirs)
-    print("Moved per caller dirs!!")
-    
-def copy_png_toexternal(rundir,runid):
-    print("QC Script started!!")
-    igv_snapshotdir = '%s/%s/'% (rundir,"igv-snapshots")
-    move_dirs_percaller(rundir)
-    #caller_paths, full_run_path = create_percaller_dirs(runid)
-    #os.chdir(igv_snapshotdir)
-    #print("Copying png files to external results dir....")
-    #find_png_copy_mutect2 = "find MuTect2/ -type f -name '*.png' -exec cp -R {} " + caller_paths[0] + " \;" 
-    #find_png_copy_strelka = "find Strelka/ -type f -name '*.png' -exec cp -R {} " + caller_paths[1] + " \;"
-    #find_png_copy_lofreqsomatic = "find LoFreqSomatic/ -type f -name '*.png' -exec cp -R {} " + caller_paths[2] + " \;"
-    #subprocess_cmd(find_png_copy_mutect2)
-    #subprocess_cmd(find_png_copy_strelka)
-    #subprocess_cmd(find_png_copy_lofreqsomatic)
-    #os.system("chmod -R g+rwx " + full_run_path )
-    #print("Copied all png files to external dir!!")
 
 ############################ Variants paired tumor:normal samples from annotations.paired.tsv file ###########################
 
@@ -86,40 +39,8 @@ def file_processing(annotations_paired_file):
     annotations_processed['LoFreqSomatic'] = annotations_processed['VariantCaller'].apply(lambda x: 'Yes' if x == "LoFreqSomatic" else 'No')
     return annotations_processed
     
-def make_clickable(link,name):
-    # target _blank to open new window
-    return '<a target="_blank" href="{}">{}</a>'.format(link, name)
-
-def igv_png(runID,igvsnapshot_path,callerType):
-    png_caller = '%s_%s'% ('png',callerType)
-    igvsnapshot_path_caller = '%s%s%s'% (igvsnapshot_path,"/igv-snapshots/",callerType)
-    png_caller = []
-    for root, dirs, files in os.walk(igvsnapshot_path_caller):
-        for file in files:
-            if file.endswith('.png'):
-                png_caller.append(file)
-    return png_caller
-
-def add_igvsnapshots_to_variants(runID,igvsnapshot_path,callerType,annotations_processed,urlpath):
-    png_caller = igv_png(runID,igvsnapshot_path,callerType)
-    caller_variants_igv = pd.DataFrame(columns=['Tumor','Normal','Gene.refGene','AAChange.refGene','Variant','MuTect2','Strelka','LoFreqSomatic','DP','AF','Func.refGene','ExonicFunc.refGene','NORMAL.AF'])
-    cols_final = caller_variants_igv.columns.tolist()
-    for i in png_caller:
-        groups = i.split('_')
-        ## split the filename at 2nd occurence of '_' to match df['Bam_Variant'] column ##
-        file_variant = '_'.join(groups[:2]), '_'.join(groups[2:])
-        variants = annotations_processed[(annotations_processed[callerType] == 'Yes')]
-        df = variants[variants['Bam_Variant'].str.contains(file_variant[0])]
-        df_final = df.copy()
-        urlpath_final = '%s/%s/%s/'% (urlpath,runID,callerType)
-        url = urljoin(urlpath_final, i)
-        df_final = df_final.drop(['Bam_Variant'], axis=1)
-        df_final = df_final[cols_final]
-        caller_variants_igv = pd.concat([caller_variants_igv,df_final])
-    return caller_variants_igv
-
-def somatic_annotation_filtered(all_caller_df,annotations_processed):
-    final_df = pd.concat(all_caller_df)
+def somatic_annotation_filtered(annotations_processed):
+    final_df = annotations_processed
     final_dfs_nodup = final_df.drop_duplicates()
     sample_list = annotations_processed.Tumor.unique()
 
@@ -136,7 +57,8 @@ def somatic_annotation_filtered(all_caller_df,annotations_processed):
         variants.reset_index(drop=True, inplace=True)
     
     all_variants_final = variants.sort_values('Gene.refGene')
-    all_variants_final_df = all_variants_final[(all_variants_final['AF'] >= 0.05) & (all_variants_final['DP'] > 50) & (all_variants_final['ExonicFunc.refGene'] != 'synonymous SNV' ) & (all_variants_final['Func.refGene'] == 'exonic') | (all_variants_final['Func.refGene'] == 'upstream')| (all_variants_final['Func.refGene'] == 'splicing')]
+    all_variants_final_filter = all_variants_final[(all_variants_final['AF'] >= 0.05) & (all_variants_final['DP'] > 50)]
+    all_variants_final_df = all_variants_final_filter[(all_variants_final_filter['ExonicFunc.refGene'] != 'synonymous SNV' ) & (all_variants_final_filter['Func.refGene'] == 'exonic') | (all_variants_final_filter['Func.refGene'] == 'upstream')| (all_variants_final_filter['Func.refGene'] == 'splicing')]
     return all_variants_final_df
 
 def germline_lofreq_annotation(annotations_paired_file,lofreq_annotation_file,germline_genes_file):
@@ -167,28 +89,11 @@ def germline_lofreq_annotation(annotations_paired_file,lofreq_annotation_file,ge
     
        
 def main(runid,rundir,pactid):
-    ## 1. copy files to igv external dirs ##
-    copy_png_toexternal(rundir,runid)
-
-    ## 2. process somatic variants ##
+    ## 1. process somatic variants ##
     somatic_annotation_file = find('annotations.paired.tsv', rundir)
     annotations_paired_file = pd.read_csv(somatic_annotation_file[0],sep="\t",header=0)
     annotations_processed = file_processing(annotations_paired_file)
-    mutect2_variants_igv=strelka_variants_igv=lofreqsomatic_variants_igv=pd.DataFrame([])
-    callers = ['MuTect2','Strelka','LoFreqSomatic']
-    for caller in callers:
-        variants_igv = add_igvsnapshots_to_variants(runid,rundir,caller,annotations_processed,"https://genome.med.nyu.edu/results/external/NYU/snuderllab/igv-snapshots/")
-        if caller == "MuTect2":
-            mutect2_variants_igv = variants_igv
-        elif caller == "Strelka":
-            strelka_variants_igv = variants_igv
-        elif caller == "LoFreqSomatic":
-            lofreqsomatic_variants_igv = variants_igv
-        else:
-            print("No caller found")
-
-    all_caller_df = [mutect2_variants_igv,strelka_variants_igv,lofreqsomatic_variants_igv]
-    somatic_variants = somatic_annotation_filtered(all_caller_df,annotations_processed)
+    somatic_variants = somatic_annotation_filtered(annotations_processed)
     print("Somatic variants are generated!!")
     
      ## merge the ngs test case ID with the variants list ##
@@ -219,7 +124,7 @@ def main(runid,rundir,pactid):
 
     somatic_variants_samples = somatic_variants_final.Test_Number.unique()
 
-    ## 3. Process germline variants ##
+    ## 2. Process germline variants ##
     lofreq_annotation_file_find = find('annotations.LoFreq.tsv', rundir)
     lofreq_annotation_file = pd.read_csv(lofreq_annotation_file_find[0],sep="\t",header=0)
     germline_genes_file_find = find('germline_genes.csv', maindir)
