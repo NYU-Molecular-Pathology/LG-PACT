@@ -118,7 +118,7 @@ def main(runid,rundir,pactid):
     cosmic_somatic_merge['COSMIC_Count'] = cosmic_somatic_merge['COSMIC_Count'].astype(str).replace('0','None')
     cosmic_somatic_merge['CosmicID'] = cosmic_somatic_merge['CosmicID'].replace(0,'None')
     ## Get the required cols for final report ##
-    somatic_cosmic_variants = cosmic_somatic_merge[['Test_Number','Tumor','Normal','Gene.refGene','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','CosmicID','COSMIC_Count','AAChange.refGene','Variant','DP','AF','Func.refGene','NORMAL.AF']]
+    somatic_cosmic_variants = cosmic_somatic_merge[['Test_Number','Tumor','Normal','Gene.refGene','Variant','DP','AF','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','CosmicID','COSMIC_Count','AAChange.refGene','Func.refGene','NORMAL.AF']]
     somatic_file_out = '%s/%s/%s'% (rundir,"clinical","somatic_variants.csv")
     somatic_cosmic_variants.to_csv(somatic_file_out, index=False)
 
