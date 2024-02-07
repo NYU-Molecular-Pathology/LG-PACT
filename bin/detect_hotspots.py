@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
+# ---------------------------
+# Script name: detect_hotspots.py
+# Purpose: Merge all raw variant call samples
+# Date Last Modified: February 7, 2024
+# Version: 1.1
+# Author: Jonathan Serrano
+# Copyright (c) NYULH Jonathan Serrano, 2024
+# ---------------------------
 
 import os
 import pandas as pd
 import argparse
 import fnmatch
 from typing import List, Tuple
-
+import csv
 
 def find(pattern, path):
     exclude_directories = set(['work'])
@@ -39,15 +47,17 @@ def output_hotspots(out_df, pactid, rundir_output):
     print("Hotspot report is rendered!")
 
 
-def read_vcf(path: str) -> pd.Series:
+def read_vcf(path: str, unique_chr_list: list) -> pd.Series:
     """Read a VCF file and return specific rows as a pd.Series."""
     try:
         df = pd.read_csv(path, comment='#', dtype=str, sep='\t', header=None, usecols=[0, 1])
-        df = df[df[0].isin(["chr12", "chr7", "chr15", "chr3", "chr2"])]
+        df = df[df[0].isin(unique_chr_list)]
         return (df[0] + ":" + df[1])
     except Exception as e:
         print("MuTect2:", e, "using columns=[0, 1] instead")
         df = pd.DataFrame(columns=[0, 1])
+        print("FAILED DF")
+        print(df)
         return (df[0] + ":" + df[1])
 
 
@@ -85,6 +95,16 @@ def sample_name(annotation_file: pd.DataFrame, column: str) -> List[str]:
     return annotation_file[column].str.split('_', expand=True, n=5)[5].tolist()
 
 
+def get_unique_chromosomes(file_path):
+    unique_chromosomes = set()
+    with open(file_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            chromosome = row['Position'].split(':')[0]
+            unique_chromosomes.add(chromosome)
+    return sorted(list(unique_chromosomes))
+
+
 def merge_vcf_col(caller_dict, hotspots_csv, out_df, ts_number, hotspot_samples):
     """_summary_
         Takes in template csv list of positions and checks each vcf file per sample for match
@@ -104,6 +124,7 @@ def merge_vcf_col(caller_dict, hotspots_csv, out_df, ts_number, hotspot_samples)
 
     pos_col = temp_df.columns.get_loc("Position")
     positions = temp_df.iloc[:, pos_col].tolist()
+    unique_chr_list = get_unique_chromosomes(hotspots_csv)
 
     for caller, inputDir in caller_dict.items():
         vcf_path = list(list_full_paths(inputDir))
@@ -117,9 +138,13 @@ def merge_vcf_col(caller_dict, hotspots_csv, out_df, ts_number, hotspot_samples)
                 print(f"No VCF files found for Sample: {curr_sam}")
                 continue
             try:
-                vcf_df_set = pd.concat(map(read_vcf, filenames)).tolist()
+                # vcf_df_set = pd.concat(map(read_vcf, filenames)).tolist()
+                vcf_df_series = pd.concat(map(lambda filename: read_vcf(filename, unique_chr_list), filenames)).drop_duplicates()
+                vcf_df_set = vcf_df_series.tolist()
                 yes_no = ['YES' if pos in vcf_df_set else 'NO' for pos in positions]
                 curr_rows = out_df.index[out_df['Sample'] == curr_sam].tolist()
+                print(curr_rows)
+                out_df.iloc[:, curr_col] = out_df.iloc[:, curr_col].astype('str')
                 out_df.iloc[curr_rows, curr_col] = yes_no
             except ValueError as e:
                 print(f"Error processing VCF files for Sample: {curr_sam}. Error: {e}")
