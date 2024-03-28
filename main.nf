@@ -3359,7 +3359,7 @@ process split_annotation_table_paired {
     file("annotations.tsv") from all_annotations_file_ch4
 
     output:
-    file("${output_paired}") into anno_tab_by_caller
+    file("${output_paired}") into (anno_tab_by_caller, anno_tab_by_caller2)
     file("${output_unpaired}")
     val(output_unpaired) into done_split_annotation_table_paired
 
@@ -3449,7 +3449,7 @@ process callable_loci_table {
 }
 
 callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
-.set { sample_loci_collected}
+.into { sample_loci_collected; sample_loci_collected2}
 Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2 }
 Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2}
 
@@ -3471,6 +3471,26 @@ process caller_variants_tmb {
     calculate_TMB.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
     """
 }
+
+process caller_variants_tmb_validation {
+    publishDir "${params.outputDir}/", mode: 'copy'
+
+    input:
+    set file(anno_tsv) from anno_tab_by_caller2
+    set file(sample_loci) from sample_loci_collected2
+    set file(sample_sheet) from demux_sample_sheet2
+
+    output:
+    file("${tmb_tsv}")
+
+    script:
+    //annotations.MuTect2.tsv
+    tmb_tsv = "annotations.paired.tmb.validation.tsv"
+    """
+    calculate_TMB_validation.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
+    """
+}
+
 
 // only keep files with at least 1 variant for TMB analysis
 annotations_annovar_tables.filter { sampleID, caller, type, anno_tsv ->
