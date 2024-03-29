@@ -3450,7 +3450,7 @@ process callable_loci_table {
 
 callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
 .into { sample_loci_collected; sample_loci_collected2}
-Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2 }
+Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3 }
 Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2}
 
 process caller_variants_tmb {
@@ -3478,7 +3478,7 @@ process caller_variants_tmb_validation {
     input:
     set file(anno_tsv) from anno_tab_by_caller2
     set file(sample_loci) from sample_loci_collected2
-    set file(sample_sheet) from demux_sample_sheet2
+    set file(sample_sheet) from demux_sample_sheet3
 
     output:
     file("${tmb_tsv}")
