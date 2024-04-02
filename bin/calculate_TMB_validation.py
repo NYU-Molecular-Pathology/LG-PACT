@@ -68,22 +68,24 @@ def get_options():
                         help="tumor sample type, paired not unpaired", default="paired")
     return parser.parse_args()
 
-def main(callable_loci_file,annotation_paired_file,demux_ss,callerType,output_tmb_file):
+def main():
+    args = get_options()
+    print(args)
     loci_dict = dict()
     tmb_dict = dict()
     sample_dict = dict()
     excl_list = ["SC-SERACARE","NC-HAPMAP","SC_SERACARE","NC_HAPMAP"]
-    with open (callable_loci_file) as fl:
+    with open (args.loci) as fl:
         for line in fl:
             items = line.strip().split()
             loci_dict[items[1]] = items[0]
-    with open(demux_ss) as fs:
+    with open(args.sample_sheet) as fs:
         for line in fs.readlines()[20:]:
             items = line.split(",")
             if items[0].endswith(tuple(excl_list)) or items[2] == "NA": continue
             sample_dict[items[0]] = items[-7].strip()
             print(items[0], items[-7].strip())
-    with open(annotation_paired_file) as fin, open(output_tmb_file, 'w') as fout:
+    with open(args.input) as fin, open(args.output, 'w') as fout:
         fout.write("SampleID\tVariantCaller\tnBases\tnVariants\tTMB\tTumorType\n")
         reader = csv.DictReader(fin, delimiter = '\t')
         print(reader.fieldnames)
@@ -92,7 +94,7 @@ def main(callable_loci_file,annotation_paired_file,demux_ss,callerType,output_tm
                 caller = row['VariantCaller']
                 if caller not in tmb_dict.keys():
                     tmb_dict[caller] = {}
-                sample = row['Tumor'] if callerType == "paired" else row['Sample']
+                sample = row['Tumor'] if args.type == "paired" else row['Sample']
                 if sample.endswith(tuple(excl_list)) : continue
                 if sample not in tmb_dict[caller].keys():
                     tmb_dict[caller][sample] = {"variants":0}
