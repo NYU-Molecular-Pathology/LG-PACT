@@ -1203,6 +1203,7 @@ process gatk_CollectHsMetrics {
 
     output:
     set val(sampleID), file("${hsmetric_output}"), file("${per_target_coverage_output}") into hsmetric_pertargcoverage
+    val(sampleID) into done_gatk_CollectHsMetrics
 
     script:
     prefix = "${sampleID}"
@@ -1216,6 +1217,31 @@ process gatk_CollectHsMetrics {
     -TI "${target_interval}" \
     -R "${ref_fasta}" \
     --PER_TARGET_COVERAGE "${per_target_coverage_output}"
+    """
+
+}
+
+process gatk_CollectInsertSizeMetrics {
+    // gatk CollectInsertSizeMetrics for dd_ra_rc bams 
+    publishDir "${params.outputDir}/CollectInsertSizeMetrics", mode: 'copy'
+
+    input:
+    set val(sampleID), file(ra_rc_bam_file), file(ra_rc_bai_file), file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed), file(bait_interval), file(target_interval) from samples_dd_ra_rc_bam_ref_intervals2
+
+    output:
+    set val(sampleID), file("${insertsize_metrics_output}"), file("${insertsize_metrics_histogram}") into insertsizemetrics_output
+    val(sampleID) into done_gatk_CollectInsertSizeMetrics
+
+    script:
+    prefix = "${sampleID}"
+    insertsize_metrics_output = "${prefix}_insert_size_metrics.txt"
+    insertsize_metrics_histogram = "${prefix}_insert_size_histogram.pdf"
+
+    """
+    gatk CollectInsertSizeMetrics \
+    -I "${ra_rc_bam_file}" \
+    -O "${insertsize_metrics_output}" \
+    -H "${insertsize_metrics_histogram}"
     """
 
 }
@@ -4802,6 +4828,8 @@ done_copy_samplesheet.concat(
     done_gatk_BaseRecalibrator,
     done_gatk_BaseRecalibratorBQSR,
     done_gatk_PrintReads,
+    done_gatk_CollectHsMetrics,
+    done_gatk_CollectInsertSizeMetrics,
     done_lofreq,
     done_gatk_hc,
     done_deconstructSigs_signatures,
@@ -5056,6 +5084,9 @@ process run_qc {
 
     # CollectHsmetric qc
     hsmetrics_summary.py -rdir "${PWD}/" -tnss ${sampleTumorNormalCsv}
+
+    # CollectInsertSizeMetric qc
+    insertsizemetrics_summary.py -rdir "${PWD}/"
 
     # Hotspot qc
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
