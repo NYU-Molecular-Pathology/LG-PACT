@@ -172,6 +172,10 @@ def main(runid, pactid, rundir):
     print("demux_ss_find:" + demux_ss_find)
     demux_ss_file = pd.read_csv(demux_ss_find, skiprows=19)
     is_tumor = demux_ss_file['Tumor_Content'] != 0
+    if not is_tumor.any():
+        is_tumor = demux_ss_file['Tumor_Type'].notna()
+    if not is_tumor.any():
+        print("Check the 'Tumor_Content' and 'Tumor_Type' columns")
     ts_number = demux_ss_file.loc[is_tumor, 'Specimen_ID'].tolist()
     hotspot_samples = demux_ss_file['Test_Number'].unique()
     hotspot_samples = hotspot_samples[hotspot_samples != '0']
