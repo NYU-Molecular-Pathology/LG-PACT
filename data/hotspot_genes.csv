@@ -1,4 +1,5 @@
 Sample,Gene,Position,Variant,Strelka,LoFreqSomatic,Mutect
+1,AKT1,chr14:105246551,c.49G>A;p.E17K,,,
 1,BRAF,chr7:140453135,c.1798_1799GT>AA;p.V600K,,,
 1,BRAF,chr7:140453136,c.1799T>A;p.V600E,,,
 1,BRAF,chr7:140477837,c.1457_1471del;p.Asn486_Pro490del,,,
