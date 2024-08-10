@@ -55,6 +55,7 @@ defaultParams.sampleTumorNormalCsv = "samples.tumor.normal.csv"
 defaultParams.SeraCareSelectedTsv = "data/SeraCare-selected-variants.tsv"
 defaultParams.SeraCareErrorRate = 0.02
 defaultParams.SeraCareSelectedVariantsdisTsv = "data/SeraCare-selected-variants-dist.tsv"
+defaultParams.SeraCareTruthSet = "data/SeraSeq-Truth.txt"
 defaultParams.reconv_hg19_genomelength = "data/hg19_genome_length_PACT.txt"
 defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
 defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
@@ -103,6 +104,7 @@ def sampleTumorNormalCsv = params.sampleTumorNormalCsv
 def SeraCareSelectedTsv = params.SeraCareSelectedTsv
 def SeraCareSelectedTsvFile = new File("${SeraCareSelectedTsv}").getName()
 def SeraCareSelectedVariantsdisTsv = params.SeraCareSelectedVariantsdisTsv
+def SeraCareTruthSet = params.SeraCareTruthSet
 def SeraCareErrorRate = params.SeraCareErrorRate
 def CNVPool = params.CNVPool
 def reconv_hg19_genomelength = params.reconv_hg19_genomelength
@@ -140,7 +142,7 @@ params.ref_fa_bwa_dir = "${params.ref_dir}/BWA/hg19"
 params.ref_fai = "${params.ref_dir}/iGenomes/Homo_sapiens/UCSC/hg19/Sequence/WholeGenomeFasta/genome.fa.fai"
 params.ref_dict = "${params.ref_dir}/iGenomes/Homo_sapiens/UCSC/hg19/Sequence/WholeGenomeFasta/genome.dict"
 params.ref_chrom_sizes = "${params.ref_dir}/Illumina/hg19/chrom.sizes"
-params.microsatellites = "${params.ref_dir}/msisensor/hg19/microsatellites.list"
+params.microsatellites = "${params.ref_dir}/msisensor/microsatellites/microsatellites.clean_chr_only_list"
 params.trimmomatic_contaminant_fa = "${params.ref_dir}/contaminants/trimmomatic.fa"
 
 params.gatk_bundle_dir = "${params.ref_dir}/gatk-bundle"
@@ -428,6 +430,8 @@ sampleIDs3.filter {
 
 Channel.fromPath( "${SeraCareSelectedTsv}").into { seracare_selected_tsv; seracare_selected_tsv2 }
 Channel.fromPath( file(SeraCareSelectedVariantsdisTsv)).into {seracare_selected_variants_dist_tsv; seracare_selected_variants_dist_tsv2}
+Channel.fromPath( file(SeraCareTruthSet)).into {seracare_truth_set; seracare_truth_set2 }
+Channel.fromPath("/gpfs/data/molecpathlab/production/NGS607/",type: 'dir').set { ngs607_dir }
 Channel.fromPath("${CNVPool}").set { cnv_pool_ch }
 Channel.fromPath( file(samplesheet) ).set { samples_analysis_sheet }
 
@@ -2258,7 +2262,7 @@ process msisensor {
     // TODO: find a method to pre-filter based on the number of alignments ??
     // validExitStatus 0,139 // allow '139' failure from small dataset; 23039 Segmentation fault      (core dumped)
     errorStrategy 'ignore'
-    publishDir "${params.outputDir}/microsatellites", mode: 'copy'
+    publishDir "${params.outputDir}/msi", mode: 'copy'
 
     input:
     set val(comparisonID), val(tumorID), file(tumorBam), file(tumorBai), val(normalID), file(normalBam), file(normalBai), file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed), file(microsatellites) from samples_dd_ra_rc_bam_pairs_ref_msi
@@ -2270,17 +2274,14 @@ process msisensor {
     file "${msisensor_somatic}"
     val(comparisonID) into done_msisensor
 
-    when:
-    disable_msisensor != true
-
     script:
     prefix = "${comparisonID}"
-    msisensor_output = "${prefix}.msisensor"
-    msisensor_dis = "${prefix}.msisensor_dis"
-    msisensor_germline = "${prefix}.msisensor_germline"
-    msisensor_somatic = "${prefix}.msisensor_somatic"
+    msisensor_output = "${prefix}"
+    msisensor_dis = "${prefix}_dis"
+    msisensor_germline = "${prefix}_germline"
+    msisensor_somatic = "${prefix}_somatic"
     """
-    msisensor msi -d "${microsatellites}" -n "${normalBam}" -t "${tumorBam}" -e "${targets_bed}" -o "${msisensor_output}" -l 1 -q 1 -b \${NSLOTS:-\${NTHREADS:-1}}
+    msisensor msi -d "${microsatellites}" -n "${normalBam}" -t "${tumorBam}" -o "${msisensor_output}"
     """
 }
 
@@ -3479,32 +3480,14 @@ callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${param
 Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3 }
 Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2}
 
-process caller_variants_tmb {
-    publishDir "${params.outputDir}/", mode: 'copy'
-
-    input:
-    set file(anno_tsv) from anno_tab_by_caller
-    set file(sample_loci) from sample_loci_collected
-    set file(sample_sheet) from demux_sample_sheet
-
-    output:
-    file("${tmb_tsv}")
-
-    script:
-    //annotations.MuTect2.tsv
-    tmb_tsv = "annotations.paired.tmb.tsv"
-    """
-    calculate_TMB.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
-    """
-}
 
 process caller_variants_tmb_validation {
     publishDir "${params.outputDir}/", mode: 'copy'
 
     input:
-    set file(anno_tsv) from anno_tab_by_caller2
-    set file(sample_loci) from sample_loci_collected2
-    set file(sample_sheet) from demux_sample_sheet3
+    file(anno_tsv) from anno_tab_by_caller2
+    file(sample_loci) from sample_loci_collected2
+    file(sample_sheet) from demux_sample_sheet3
 
     output:
     file("${tmb_tsv}")
@@ -3517,6 +3500,24 @@ process caller_variants_tmb_validation {
     """
 }
 
+process caller_variants_tmb_validation_2callers {
+    publishDir "${params.outputDir}/", mode: 'copy'
+
+    input:
+    file(anno_tsv) from anno_tab_by_caller
+    file(sample_loci) from sample_loci_collected
+    file(sample_sheet) from demux_sample_sheet
+
+    output:
+    file("${tmb_tsv}")
+
+    script:
+    //annotations.MuTect2.tsv
+    tmb_tsv = "annotations.paired.tmb.validation.2callers.tsv"
+    """
+    calculate_TMB_validation_2callers.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
+    """
+}
 
 // only keep files with at least 1 variant for TMB analysis
 annotations_annovar_tables.filter { sampleID, caller, type, anno_tsv ->
@@ -5064,6 +5065,8 @@ process run_qc {
     file(demuxSamplesheet) from demux_sample_sheet2
     file(sampleTumorNormalCsv) from sample_Tumor_Normal_sheet
     file(seracare_selected_variants_dist) from seracare_selected_variants_dist_tsv
+    file(sc_truth_set) from seracare_truth_set
+    file(ngs607dir) from ngs607_dir
 
     script:
     """
@@ -5076,6 +5079,9 @@ process run_qc {
     # generate Run QC
     generate_html_report.py -o "${PWD}/" -p "\${pactid}" -r "\${runid}" -s ${seracare_selected_variants_dist}
 
+    # SeraCare QC 
+    seracare_af_qc.py -rid "\${runid}" -rdir "${PWD}/output" -sct ${sc_truth_set} -ngsdir ${ngs607dir}
+
     # variants QC
     variants_qc.py -rid "\${runid}" -rdir "${PWD}/output" -pactid "\${pactid}"
 
@@ -5087,6 +5093,9 @@ process run_qc {
 
     # CollectInsertSizeMetric qc
     insertsizemetrics_summary.py -rdir "${PWD}/"
+
+    # MSI summary 
+    msi_summary.py -rdir "${PWD}/output" -s ${demuxSamplesheet}
 
     # Hotspot qc
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
