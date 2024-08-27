@@ -143,6 +143,9 @@ params.ref_fai = "${params.ref_dir}/iGenomes/Homo_sapiens/UCSC/hg19/Sequence/Who
 params.ref_dict = "${params.ref_dir}/iGenomes/Homo_sapiens/UCSC/hg19/Sequence/WholeGenomeFasta/genome.dict"
 params.ref_chrom_sizes = "${params.ref_dir}/Illumina/hg19/chrom.sizes"
 params.microsatellites = "${params.ref_dir}/msisensor/microsatellites/microsatellites.clean_chr_only_list"
+params.mantis_bed = "${params.ref_dir}/Mantis/all_loci.bed"
+params.mantis_refgenome = "${params.ref_dir}/Mantis/hg19.fa"
+params.mantis_refgenome_index = "${params.ref_dir}/Mantis/hg19.fa.fai"
 params.trimmomatic_contaminant_fa = "${params.ref_dir}/contaminants/trimmomatic.fa"
 
 params.gatk_bundle_dir = "${params.ref_dir}/gatk-bundle"
@@ -338,6 +341,10 @@ Channel.fromPath( file(params.common_snp_vcf) ).set{ common_snp_vcf }
 Channel.fromPath( file(params.common_snp_vcf_tbi) ).set{ common_snp_vcf_tbi }
 
 Channel.fromPath( file(params.microsatellites) ).set{ microsatellites }
+Channel.fromPath( file(params.mantis_bed) ).set{ mantis_bed }
+Channel.fromPath( file(params.mantis_refgenome) ).set{ mantis_hg19 }
+Channel.fromPath( file(params.mantis_refgenome_index) ).set{ mantis_hg19_index }
+
 Channel.fromPath( file(params.ANNOVAR_DB_DIR) ).into { annovar_db_dir;
     annovar_db_dir2;
     annovar_db_dir3;
@@ -2156,6 +2163,12 @@ samples_dd_ra_rc_bam2.combine(samples_pairs) // [ sampleID, sampleBam, sampleBai
                     .combine(microsatellites) // add MSI ref
                     .set { samples_dd_ra_rc_bam_pairs_ref_msi }
 
+                    // Mantis channel
+                    samples_dd_ra_rc_bam_pairs2.combine(mantis_bed)
+                    .combine(mantis_hg19)
+                    .combine(mantis_hg19_index)
+                    .set { mantis_bam_pairs_ref }
+
 samples_dd_bam3.combine(samples_pairs4) // [ sampleID, sampleBam, sampleBai, tumorID, normalID ]
     .filter { items -> // only keep combinations where sample is same as tumor pair sample
         def sampleID = items[0]
@@ -2282,6 +2295,24 @@ process msisensor {
     msisensor_somatic = "${prefix}_somatic"
     """
     msisensor msi -d "${microsatellites}" -n "${normalBam}" -t "${tumorBam}" -o "${msisensor_output}"
+    """
+}
+
+process mantis {
+    publishDir "${params.outputDir}/mantis", mode: 'copy'
+    
+    input:
+    set val(comparisonID), val(tumorID), file(tumorBam), file(tumorBai), val(normalID), file(normalBam), file(normalBai), file(mantis_bed), file(mantis_hg19), file(mantis_hg19_index) from mantis_bam_pairs_ref
+
+    output:
+    file("${comparisonID}*")
+    val(comparisonID) into done_mantis
+
+    script:
+    """
+    export PYTHONWARNINGS="ignore::DeprecationWarning"
+    source /opt/conda/bin/activate mantis-msi2-env
+    mantis-msi2 --bedfile "${mantis_bed}" --genome "${mantis_hg19}" -n "${normalBam}" -t "${tumorBam}" -o "${comparisonID}" --threads 4
     """
 }
 
@@ -4837,6 +4868,7 @@ done_copy_samplesheet.concat(
     done_merge_signatures_plots,
     done_merge_signatures_pie_plots,
     done_msisensor,
+    done_mantis,
     done_mutect2,
     done_annotate,
     done_annotate_pairs,
