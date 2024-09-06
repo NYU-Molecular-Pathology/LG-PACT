@@ -52,6 +52,13 @@ def process_run(seracare_annotation_file, sc_truthset):
     truth_set = truth_set.applymap(lambda x: x.strip() if isinstance(x, str) else x)
     # Step 4: Merge SC truthset and current run sc annotation data
     combine_SCtruth_SCannot = pd.merge(truth_set, sc_annot_data, on=['Gene', 'Coding', 'AAChange'], how='left')
+    # If 'Sample' column has NaN, fill it with the sample value from 'data'
+    if combine_SCtruth_SCannot['Sample'].isna().any():
+        if len(sc_annot_data['Sample'].unique()) == 1:
+            combine_SCtruth_SCannot['Sample'].fillna(sc_annot_data['Sample'].iloc[0], inplace=True)
+        else:
+            combine_SCtruth_SCannot['Sample'] = combine_SCtruth_SCannot.groupby(['Gene', 'Coding', 'AAChange'])['Sample'].transform(lambda x: x.ffill().bfill())
+    print(combine_SCtruth_SCannot.to_string())
     combine_SCtruth_SCannot['Detected_AF'] = combine_SCtruth_SCannot['Detected_AF'].fillna(value=0) # replace NA with 0
     combine_SCtruth_SCannot['Results'] = combine_SCtruth_SCannot.apply(determine_result, axis=1)
     return(combine_SCtruth_SCannot)

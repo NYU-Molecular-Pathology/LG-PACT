@@ -2149,7 +2149,7 @@ samples_dd_ra_rc_bam2.combine(samples_pairs) // [ sampleID, sampleBam, sampleBai
                     }
                     .tap { samples_dd_ra_rc_bam_noHapMap_pairs }
                     .mix(hapmap_samples_pool)
-                    .tap { samples_dd_ra_rc_bam_pairs } // make a channel for just this set of data
+                    .tap { samples_dd_ra_rc_bam_pairs; samples_dd_ra_rc_bam_pairs2 } // make a channel for just this set of data
                     .combine(ref_fasta3) // add reference genome and targets
                     .combine(ref_fai3)
                     .combine(ref_dict3)
@@ -2157,7 +2157,6 @@ samples_dd_ra_rc_bam2.combine(samples_pairs) // [ sampleID, sampleBam, sampleBai
                     .combine(targets_bed4)
                     .tap { samples_dd_ra_rc_bam_pairs_refFasta } // [ comparisonID, tumorID, tumorBam, tumorBai, normalID, normalBam, normalBai, file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed) ]
                     .tap {  samples_dd_ra_rc_bam_pairs_ref; // [ comparisonID, tumorID, tumorBam, tumorBai, normalID, normalBam, normalBai, file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed) ]
-                            samples_dd_ra_rc_bam_pairs2;
                             samples_dd_ra_rc_bam_pairs_ref3;
                             samples_dd_ra_rc_bam_pairs_ref4 }
                     .combine(microsatellites) // add MSI ref
