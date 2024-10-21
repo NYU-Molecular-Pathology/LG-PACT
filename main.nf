@@ -111,6 +111,7 @@ def CNVPool = params.CNVPool
 def reconv_hg19_genomelength = params.reconv_hg19_genomelength
 def genes_tsv = params.genes_tsv
 def projectDir = params.runID
+def pactid = new File("${demuxSamplesheet}").readLines()[3].split(',')[1]
 
 // Enable or disable some pipeline steps here TODO: better config management for this
 disable_multiqc = true // for faster testing of the rest of the pipeline
