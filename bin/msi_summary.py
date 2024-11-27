@@ -40,7 +40,7 @@ def write_msi_summary(msi_summary, output_file):
             TumorType = msi_results[0]
             Total_Sites, Somatic_sites = map(int, msi_results[1][:2])
             msi = "NA" if Total_Sites == 0 else msi_results[1][2]
-            msi_status = "NA" if msi == "NA" else ("Unstable" if msi >= 14.0 else "Stable")
+            msi_status = "NA" if msi == "NA" else ("Unstable" if msi >= 10.0 else "Stable")
             fout.write(f"{SampleID}\t{Total_Sites}\t{Somatic_sites}\t{msi}\t{msi_status}\t{TumorType}\n")
 
 def get_options():
