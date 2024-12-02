@@ -3524,7 +3524,7 @@ process caller_variants_tmb_validation_2callers {
     //annotations.MuTect2.tsv
     tmb_tsv = "annotations.paired.tmb.validation.2callers.tsv"
     """
-    calculate_TMB_validation_2callers.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
+    calculate_TMB_validation_2callers.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}" -vao "${PWD}/output/TMB_Variants/"
     """
 }
 
