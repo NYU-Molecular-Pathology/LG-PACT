@@ -5089,7 +5089,7 @@ process run_qc {
     generate_html_report.py -o "${PWD}/" -p "\${pactid}" -r "\${runid}" -s ${seracare_selected_variants_dist}
 
     # SeraCare QC 
-    #seracare_af_qc.py -rid "\${runid}" -rdir "${PWD}/output" -sct ${sc_truth_set} -ngsdir ${ngs607dir}
+    seracare_af_qc.py -rid "\${runid}" -rdir "${PWD}/output" -sct ${sc_truth_set} -ngsdir ${ngs607dir}
 
     # variants QC
     variants_qc.py -rid "\${runid}" -rdir "${PWD}/output" -pactid "\${pactid}"
