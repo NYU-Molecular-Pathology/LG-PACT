@@ -13,7 +13,7 @@ Additional criteria:
 For both matched and unmatched we will apply the following criteria:
 1- VAF >5%
 2- coverage > 200X.
-3- include Non Synonymous and synonymous SNV.
+3- include Non Synonymous, synonymous SNV, stoploss and stopgain
 4- include only exonic.
 5- variants called by both MuTect and LoFreqSomatic only
 
@@ -52,7 +52,7 @@ def filter_annotation_data(annot_paired_df):
     # Filter rows with AF > 0.05 and DP >= 200
     annot_paired_filter_AFDP = annot_paired_data[(annot_paired_data['AF'] > 0.05) & (annot_paired_data['DP'] >= 200)]
     # Further filter for exonic variants with specific functional annotations
-    annot_paired_type_filter = annot_paired_filter_AFDP[((annot_paired_filter_AFDP['Func.refGene'] == "exonic") & (annot_paired_filter_AFDP['ExonicFunc.refGene'].isin(["nonsynonymous SNV", "synonymous SNV"])))]
+    annot_paired_type_filter = annot_paired_filter_AFDP[((annot_paired_filter_AFDP['Func.refGene'] == "exonic") & (annot_paired_filter_AFDP['ExonicFunc.refGene'].isin(["nonsynonymous SNV", "synonymous SNV", "stoploss", "stopgain"])))]
     # Create a new 'Variant' column by concatenating CHROM, POS, REF, and ALT columns
     annot_paired_type_filter['Variant'] = annot_paired_type_filter[['CHROM', 'POS', 'REF', 'ALT']].apply(lambda x: ':'.join(x), axis=1)
     # Filter variants called by MuTect2 or LoFreqSomatic

@@ -81,7 +81,7 @@ class seq_qc_report:
 
         total_rows = len(sera_care_df.index)
         var_rows = len(pos_control_variants.loc[(pos_control_variants['Sample'] == sample)
-                            & pos_control_variants['Detected']].index)
+                            & pos_control_variants['Detected in VCF']].index)
         vaf = round(float(var_rows/total_rows),2)
         return "%s"%str(vaf*100)+'% Pass' if vaf >= cutoff else "%s"%str(vaf*100)+'% Fail'
 
@@ -162,7 +162,8 @@ class seq_qc_report:
             .str.cat(pos_control_variants['REF'], sep="") \
             .str.cat(pos_control_variants['ALT'], sep=">")
         pos_control_variants = pos_control_variants.loc[pos_control_variants['var_key'].isin(sera_care_df['var_key'])]
-        pos_control_variants['Detected'] = True
+        pos_control_variants['Detected in VCF'] = True
+        pos_control_variants.loc[pos_control_variants['AF'] < 0.01, 'Detected in VCF'] = False
         print("pos controls: %s/%s" % (len(pos_control_variants.index), len(sera_care_df.index)))
 
         # check total mapping reads
@@ -217,12 +218,16 @@ class seq_qc_report:
         #seq_QC_df['Row'] = (seq_QC_df.reset_index().index+1).astype(str)
         pos_control_variants = pos_control_variants.merge(sera_care_df, on="var_key", how='right')
         pos_control_variants = pos_control_variants.fillna(0)
-        pos_control_variants = pos_control_variants.round({"AF_x":2})
+        pos_control_variants = pos_control_variants.round({"AF_x":4})
         pos_control_variants["AF 95% Interval (Historical Runs)"] = \
             round((pos_control_variants["AF.mean"]-2*pos_control_variants['AF.sd']),2).astype(str) + " ~ " + \
             round((pos_control_variants["AF.mean"]+2*pos_control_variants['AF.sd']),2).astype(str)
-        pos_control_variants = pos_control_variants[['Gene','Coding', 'AAChange', 'DP', 'AF_x','AF 95% Interval (Historical Runs)','Detected']]
+        pos_control_variants = pos_control_variants[['Gene','Coding', 'AAChange', 'DP', 'AF_x','AF 95% Interval (Historical Runs)','Detected in VCF']]
         pos_control_variants = pos_control_variants.rename({'AF_x':"AF"}, axis=1)
+        # if variant not detected set DP and AF as "NA"
+        if (pos_control_variants['DP'] == 0.0).any():
+            pos_control_variants['DP'] = pos_control_variants['DP'].replace(0, "NA")
+            pos_control_variants['AF'] = pos_control_variants['AF'].replace(0, "NA")
         #reset index
         pos_control_variants.insert(0, 'Row', (pos_control_variants.reset_index().index+1).astype(str))
         #rename sample

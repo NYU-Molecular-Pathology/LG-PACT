@@ -130,13 +130,19 @@
             {% for idx, row in seracare.iterrows() %}
             <tr>
                 {% for colname in seracare.columns %}
-                {% if  colname == 'Detected' and  row[colname] == True%}
-                    <td class="green"><i class="fas fa-check"></i></td>
-                {% elif colname == 'Detected' and row[colname] == 0%}
-                    <td class="chocolate"><i class="fa fa-exclamation" aria-hidden="true"></i></td>
-                {% else %}
-                    <td>{{ row[colname] }}</td>
-                {% endif %}
+                    {% if colname == 'Detected in VCF' %}
+                        {% if row[colname] is true %}
+                            <td class="green"><i class="fas fa-check"></i></td>
+                        {% elif row[colname] is false %}
+                            <td class="chocolate"><i class="fa fa-exclamation" aria-hidden="true"></i></td>
+                        {% elif row[colname] == 0 %}
+                            <td class="red"><i class="fa fa-times" aria-hidden="true"></i></td>
+                        {% else %}
+                            <td>{{ row[colname] }}</td>
+                        {% endif %}
+                    {% else %}
+                        <td>{{ row[colname] }}</td>
+                    {% endif %}
                 {% endfor %}
             </tr>
             {% endfor %}
