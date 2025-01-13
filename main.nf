@@ -58,6 +58,7 @@ defaultParams.SeraCareSelectedVariantsdisTsv = "data/SeraCare-selected-variants-
 defaultParams.SeraCareTruthSet = "data/SeraSeq-Truth.txt"
 defaultParams.reconv_hg19_genomelength = "data/hg19_genome_length_PACT.txt"
 defaultParams.genes_tsv = "data/probe_genes_heatmap_list.tsv"
+defaultParams.snp_markerbedfile = "data/Phase3_GRCh37_chr.bed"
 defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
 defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
 defaultParams.HapMapBai = "ref/HapMap-Pool/NGS607/HapMap-pool.bam.bai"
@@ -110,6 +111,7 @@ def SeraCareErrorRate = params.SeraCareErrorRate
 def CNVPool = params.CNVPool
 def reconv_hg19_genomelength = params.reconv_hg19_genomelength
 def genes_tsv = params.genes_tsv
+def snp_markerbed = params.snp_markerbedfile
 def projectDir = params.runID
 def pactid = new File("${demuxSamplesheet}").readLines()[3].split(',')[1]
 
@@ -211,6 +213,7 @@ Channel.fromPath( file(targetsAnnotatedBed) ).set{ targets_annotated_bed }
 
 Channel.fromPath( file(baitintervals) ).set{ bait_intervals }
 Channel.fromPath( file(targetintervals) ).set{ target_intervals }
+Channel.fromPath( file(snp_markerbed) ).into{ snp_markerbed_file; snp_markerbed_file2 }
 
 // reference files
 Channel.fromPath( file(targetsBed) ).into { targets_bed;
@@ -248,7 +251,8 @@ Channel.fromPath( file(params.ref_fa) ).into { ref_fasta;
     ref_fasta18;
     ref_fasta19;
     ref_fasta20;
-    ref_fasta21 }
+    ref_fasta21;
+    ref_fasta22 }
 Channel.fromPath( file(params.ref_fai) ).into { ref_fai;
     ref_fai2;
     ref_fai3;
@@ -269,7 +273,8 @@ Channel.fromPath( file(params.ref_fai) ).into { ref_fai;
     ref_fai18;
     ref_fai19;
     ref_fai20;
-    ref_fai21 }
+    ref_fai21;
+    ref_fai22 }
 Channel.fromPath( file(params.ref_dict) ).into { ref_dict;
     ref_dict2;
     ref_dict3;
@@ -290,7 +295,8 @@ Channel.fromPath( file(params.ref_dict) ).into { ref_dict;
     ref_dict18;
     ref_dict19;
     ref_dict20;
-    ref_dict21 }
+    ref_dict21;
+    ref_dict22 }
 
 Channel.fromPath( file(params.reconv_hg19_genomelength) ).set{ hg19_reconCNV_genome_PACT }
 Channel.fromPath( file(params.ref_chrom_sizes) ).set{ ref_chrom_sizes }
@@ -1165,7 +1171,7 @@ process gatk_PrintReads {
     set val(sampleID), file(table1), file(ra_bam_file), file(ra_bai_file), file(ref_fasta), file(ref_fai), file(ref_dict) from recalibrated_bases_table1_ref
 
     output:
-    set val(sampleID), file("${ra_rc_bam_file}"), file("${ra_rc_bai_file}") into samples_dd_ra_rc_bam, samples_dd_ra_rc_bam2, samples_dd_ra_rc_bam3, samples_dd_ra_rc_bam4, samples_dd_ra_rc_bam5
+    set val(sampleID), file("${ra_rc_bam_file}"), file("${ra_rc_bai_file}") into samples_dd_ra_rc_bam, samples_dd_ra_rc_bam2, samples_dd_ra_rc_bam3, samples_dd_ra_rc_bam4, samples_dd_ra_rc_bam5, samples_dd_ra_rc_bam6
     val(sampleID) into done_gatk_PrintReads
 
     script:
@@ -1259,7 +1265,38 @@ process gatk_CollectInsertSizeMetrics {
     """
 
 }
-                         
+
+ // setup gatk Pileup Channels for dd_ra_rc bams
+samples_dd_ra_rc_bam6.combine(ref_fasta22)
+                    .combine(ref_fai22)
+                    .combine(ref_dict22)
+                    .combine(snp_markerbed_file)
+                    .set { samples_dd_ra_rc_bam_ref_snpmarkerbed }
+
+process gatk_SNP_Pileup {
+    // gatk Pileup for dd_ra_rc bams 
+    publishDir "${params.outputDir}/SNPPileup", mode: 'copy'
+
+    input:
+    set val(sampleID), file(ra_rc_bam_file), file(ra_rc_bai_file), file(ref_fasta), file(ref_fai), file(ref_dict), file(snp_markerbedfile) from samples_dd_ra_rc_bam_ref_snpmarkerbed
+
+    output:
+    set val(sampleID), file("${bam_pileup}") into bam_pileup_output
+    val(sampleID) into done_gatk_Pileup
+
+    script:
+    prefix = "${sampleID}"
+    bam_pileup = "${prefix}.pileup"
+
+    """
+    gatk Pileup \
+    -R "${ref_fasta}" \
+    -L "${snp_markerbedfile}" \
+    -I "${ra_rc_bam_file}" \
+    -O "${bam_pileup}"
+    """
+}
+
 samples_dd_ra_rc_bam_ref.combine( dbsnp_ref_vcf3 )
                         .combine(dbsnp_ref_vcf_idx3)
                         .into { samples_dd_ra_rc_bam_ref_dbsnp;
@@ -4840,6 +4877,7 @@ done_copy_samplesheet.concat(
     done_gatk_PrintReads,
     done_gatk_CollectHsMetrics,
     done_gatk_CollectInsertSizeMetrics,
+    done_gatk_Pileup,
     done_lofreq,
     done_gatk_hc,
     done_deconstructSigs_signatures,
@@ -5075,6 +5113,7 @@ process run_qc {
     file(sampleTumorNormalCsv) from sample_Tumor_Normal_sheet
     file(seracare_selected_variants_dist) from seracare_selected_variants_dist_tsv
     file(sc_truth_set) from seracare_truth_set
+    file(snp_marker_bedfile) from snp_markerbed_file2
     file(ngs607dir) from ngs607_dir
 
     script:
@@ -5108,6 +5147,9 @@ process run_qc {
 
     # Hotspot qc
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
+
+    # SNP QC
+    snpqc.py --pileup_path "${PWD}/output/SNPPileup" --runid "\${runid}" --rundir "${PWD}/output"  --marker_bedfile ${snp_marker_bedfile}
     """
 }
 

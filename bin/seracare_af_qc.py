@@ -65,12 +65,18 @@ def transform_filename(sample, runID, PACT_ID):
 def determine_result(row):
     """ Determine the result based on the detected AF """
     lower_limit = float(row['AF 95% Interval (Historical Runs)'].split('~')[0].strip())
-    if row['Detected_AF'] == 0:
-        return "Not detected"
-    elif row['Detected_AF'] <= lower_limit:
-        return "Low"
+    upper_limit = float(row['AF 95% Interval (Historical Runs)'].split('~')[1].strip())
+    if pd.isna(row['Detected_AF']):
+        return "NOT detected"
+    elif row['Detected_AF'] < 0.01:
+        return "Lower than 1% VAF"
+    elif row['Detected_AF'] < lower_limit:
+        return "Below range"
+    elif row['Detected_AF'] > upper_limit:
+        return "Above range"
     else:
-        return "Yes"
+        return "Within Range"
+    
     
 def process_run(seracare_annotation_file, sc_truthset):
     # Step 1: Read the TSV file
@@ -89,7 +95,7 @@ def process_run(seracare_annotation_file, sc_truthset):
         sample_table = pd.merge(truth_set, sc_annot_data[sc_annot_data['Sample'] == sampleID], on=['Gene', 'Coding', 'AAChange'], how='left')
         sample_table['Sample'] = sampleID
         combine_SCtruth_SCannot=pd.concat([combine_SCtruth_SCannot, sample_table])
-    combine_SCtruth_SCannot['Detected_AF'].fillna(0,inplace=True) # replace NA with 0
+    #combine_SCtruth_SCannot['Detected_AF'].fillna(0,inplace=True) # replace NA with 0
     combine_SCtruth_SCannot['Results'] = combine_SCtruth_SCannot.apply(determine_result, axis=1)
     return(combine_SCtruth_SCannot)
 
@@ -202,16 +208,19 @@ def main(runid,rundir,sc_truthset,dir_NGS607):
     seracare_annotation_file = find('annotations.SeraCare.tsv',rundir)
     # Get the output table for current run
     sc_vaf_table = process_run(seracare_annotation_file, sc_truthset)
-    sc_output_file = '%s/%s/%s'% (rundir,"clinical","seracare_AF_QC_table.csv")
+    # create seracare_QC output dir
+    clinical_scqc_path = os.path.join(rundir,"clinical/seracare_qc") 
+    if not os.path.exists(clinical_scqc_path): os.mkdir(clinical_scqc_path,0o0755)
+    sc_output_file = '%s/%s/%s'% (rundir,"clinical/seracare_qc","seracare_AF_QC_table.csv")
     sc_vaf_table.to_csv(sc_output_file,index=False)
     # # Get the output for past 5 runs
     demuxss ='demux-samplesheet.csv'
     previous_run_results, current_PACTID = get_past5_results(runid,dir_NGS607,sc_vaf_table,demuxss)
     # # Change the sample names for boxplot, write output for past 5 runs
-    sc_output_past5runs_file = '%s/%s/%s'% (rundir,"clinical","past_5_runs_AF.csv")
+    sc_output_past5runs_file = '%s/%s/%s'% (rundir,"clinical/seracare_qc","past_5_runs_AF.csv")
     previous_run_results.to_csv(sc_output_past5runs_file,index=False)
     # Boxplot for VAF distribution across current and past 5 runs
-    sc_output_past5runs_plot = '%s/%s/%s'% (rundir,"clinical","sc_AF_past_5_runs.png")
+    sc_output_past5runs_plot = '%s/%s/%s'% (rundir,"clinical/seracare_qc","sc_AF_past_5_runs.png")
     plot_boxplot(previous_run_results,sc_output_past5runs_plot,current_PACTID)
 
 if __name__ == "__main__":
