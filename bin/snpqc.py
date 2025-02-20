@@ -112,71 +112,6 @@ def create_correlation_matrix_heatmap(marker_ratio_df, runid, rundir):
     snp_output_heatmap = f'{rundir}/clinical/snpqc/{runid}_pct_new_markers_heatmap.png'
     plt.savefig(snp_output_heatmap)
 
-# Function to replace only the substring in column names
-def replace_columns_with_substring(data, replace_dict):
-    def replace_name(col):
-        for key, val in replace_dict.items():
-            if key in col:
-                col = col.replace(key, val)
-        return col
-        
-    data.columns = [replace_name(col) for col in data.columns]
-    return data
-
-def process_snp_qc_data(marker_ratio_file, demuxss, rundir, runid):
-    # Define colors (similar to cbp1 in R)
-    cbp1 = ["#999999", "#E69F00", "#56B4E9", "#009E73",
-            "#F0E442", "#0072B2", "#D55E00", "#CC79A7"]
-    # Load SNP QC data
-    marker_ratio_df = marker_ratio_file
-    # Remove columns containing "NTC" or "SC"
-    marker_ratio_df = marker_ratio_df.loc[:, ~marker_ratio_df.columns.str.contains("NTC|SC")]
-    
-    # Load metadata (samplesheet)
-    meta = pd.read_csv(demuxss, skiprows=19)
-    meta = meta.dropna(how='all')
-    
-    # Extract necessary columns for mapping Specimen_ID to Test_Number
-    matches = meta[['Specimen_ID', 'Test_Number']].copy()
-    matches.loc[matches['Specimen_ID'] == "NC", 'Test_Number'] = "NC"
-    matches = matches[matches['Test_Number'] != 0]
-    replace_dict = dict(zip(matches['Specimen_ID'], matches['Test_Number']))
-    
-    marker_ratio_final = replace_columns_with_substring(marker_ratio_df, replace_dict)
-    
-    # Extract unique run ID
-    runID = meta['Run_Number'].unique()[0]
-    marker_ratio_final.columns = [re.sub(f".*{runID}_", "", col) if col != "POS" else col for col in marker_ratio_final.columns]
-    
-    # Convert data from wide to long format
-    long = marker_ratio_final.melt(id_vars=['POS','REF'], var_name="sample", value_name="vaf")
-    long['vaf'] = long['vaf'].round(3)
-    
-    # Process POS column to extract chromosome and position
-    long['chr'] = long['POS'].str.extract(r'chr(\d+):').astype(int)
-    long['pos'] = long['POS'].str.extract(r':(\d+)').astype(int)
-    long = long.sort_values(by=['chr', 'pos'])
-    
-    # Ensure POS is treated as a categorical variable with correct ordering
-    long['POS'] = pd.Categorical(long['POS'], categories=long['POS'].unique(), ordered=True)
-    
-    # Plot the VAF distribution
-    unique_chr_count = long["chr"].nunique()
-    extended_cbp1 = (cbp1 * ((unique_chr_count // len(cbp1)) + 1))[:unique_chr_count]
-    
-    fig, ax = plt.subplots(figsize=(12, 6))
-    g = sns.FacetGrid(long, col="sample", col_wrap=5, sharex=False, sharey=True, height=4, aspect=1.5)
-    g.map_dataframe(sns.scatterplot, x="POS", y="vaf", hue="chr", palette=extended_cbp1, s=10)
-    g.add_legend(title="Chromosome")
-    
-    for ax in g.axes.flat:
-        ax.set_xlabel("")
-        ax.set_xticklabels([])
-    
-    plt.subplots_adjust(top=0.9)
-    g.fig.suptitle("VAF Distribution by Sample")
-    snp_output_vaf = f'{rundir}/clinical/snpqc/{runid}_SNP_AF_plot.png'
-    plt.savefig(snp_output_vaf,bbox_inches="tight")
 
 # Main function with argparse
 def main():
@@ -185,13 +120,11 @@ def main():
     parser.add_argument('--runid', required=True, help='Run ID for labeling the output')
     parser.add_argument('--rundir', required=True, help='Run output directory')
     parser.add_argument('--marker_bedfile', required=True, help='SNP marker bed file')
-    parser.add_argument('--demuxss', required=True, help= 'Demux ss for the run')
     args = parser.parse_args()
     
     marker_ratio_df = create_marker_ratiofile(args.pileup_path,args.rundir,args.marker_bedfile)
     marker_ratio_df_for_correlation = marker_ratio_df.drop(['POS', 'REF'], axis=1)
     create_correlation_matrix_heatmap(marker_ratio_df_for_correlation, args.runid, args.rundir)
-    process_snp_qc_data(marker_ratio_df, args.demuxss, args.rundir, args.runid)
 
 if __name__ == "__main__":
     main()

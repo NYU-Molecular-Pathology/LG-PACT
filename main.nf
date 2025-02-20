@@ -5149,7 +5149,7 @@ process run_qc {
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
 
     # SNP QC
-    snpqc.py --pileup_path "${PWD}/output/SNPPileup" --runid "\${runid}" --rundir "${PWD}/output"  --marker_bedfile ${snp_marker_bedfile} --demuxss ${demuxSamplesheet}
+    snpqc.py --pileup_path "${PWD}/output/SNPPileup" --runid "\${runid}" --rundir "${PWD}/output"  --marker_bedfile ${snp_marker_bedfile}
     """
 }
 
