@@ -59,6 +59,8 @@ defaultParams.SeraCareTruthSet = "data/SeraSeq-Truth.txt"
 defaultParams.reconv_hg19_genomelength = "data/hg19_genome_length_PACT.txt"
 defaultParams.genes_tsv = "data/probe_genes_heatmap_list.tsv"
 defaultParams.snp_markerbedfile = "data/Phase3_GRCh37_chr.bed"
+defaultParams.conpair_markerbedfile = "data/GRCh37_chr.bed"
+defaultParams.conpair_markertxtfile = "data/GRCh37_chr.txt"
 defaultParams.CNVPool = "ref/CNV-Pool/NGS607-pool.cnn"
 defaultParams.HapMapBam = "ref/HapMap-Pool/NGS607/HapMap-pool.bam"
 defaultParams.HapMapBai = "ref/HapMap-Pool/NGS607/HapMap-pool.bam.bai"
@@ -112,6 +114,8 @@ def CNVPool = params.CNVPool
 def reconv_hg19_genomelength = params.reconv_hg19_genomelength
 def genes_tsv = params.genes_tsv
 def snp_markerbed = params.snp_markerbedfile
+def conpair_markerbed = params.conpair_markerbedfile
+def conpair_markertxt = params.conpair_markertxtfile
 def projectDir = params.runID
 def pactid = new File("${demuxSamplesheet}").readLines()[3].split(',')[1]
 
@@ -214,6 +218,10 @@ Channel.fromPath( file(targetsAnnotatedBed) ).set{ targets_annotated_bed }
 Channel.fromPath( file(baitintervals) ).set{ bait_intervals }
 Channel.fromPath( file(targetintervals) ).set{ target_intervals }
 Channel.fromPath( file(snp_markerbed) ).into{ snp_markerbed_file; snp_markerbed_file2 }
+// Marker files for conpair 
+Channel.fromPath( file(conpair_markerbed) ).set{ conpair_markerbed_file }
+Channel.fromPath( file(conpair_markertxt) ).set{ conpair_markertxt_file }
+
 
 // reference files
 Channel.fromPath( file(targetsBed) ).into { targets_bed;
@@ -2328,6 +2336,45 @@ process msisensor {
     msisensor_somatic = "${prefix}_somatic"
     """
     msisensor msi -d "${microsatellites}" -n "${normalBam}" -t "${tumorBam}" -o "${msisensor_output}"
+    """
+}
+// Channel for Conpair
+samples_dd_ra_rc_bam_pairs_ref3.combine(conpair_markerbed_file)
+                               .combine(conpair_markertxt_file)
+                               .set{ samples_dd_ra_rc_bam_pairs_ref_conpair_markers } //[ comparisonID, tumorID, tumorBam, tumorBai, normalID, normalBam, normalBai, file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed), file(conpair_markerbed_file), file(conpair_markertxt_file) ]
+
+// Conpair process
+process conpair_pileup_concordance {
+    // gatk Pileup for dd_ra_rc bams 
+    publishDir "${params.outputDir}/Conpair", mode: 'copy'
+
+    input:
+    set val(comparisonID), val(tumorID), file(tumorBam), file(tumorBai), val(normalID), file(normalBam), file(normalBai), file(ref_fasta), file(ref_fai), file(ref_dict), file(targets_bed), file(conpair_markerbed_file), file(conpair_markertxt_file) from samples_dd_ra_rc_bam_pairs_ref_conpair_markers
+
+    output:
+    file "${tumor_pileup}"
+    file "${normal_pileup}"
+    file "${concordance_txt}"
+    file "${contamination_txt}"
+    val(comparisonID) into done_conpair
+
+    script:
+    prefix = "${comparisonID}"
+    tumor_pileup = "${tumorID}.pileup"
+    normal_pileup = "${normalID}.pileup"
+    concordance_txt = "${prefix}_concordance.txt"
+    contamination_txt = "${prefix}_contamination.txt"
+    """
+    # generate pileups for both tumor and normal sample pairs #
+    run_gatk_pileup_for_sample.py -B "${tumorBam}" -O "${tumor_pileup}" -R "${ref_fasta}" -M "${conpair_markerbed_file}"
+    run_gatk_pileup_for_sample.py -B "${normalBam}" -O "${normal_pileup}" -R "${ref_fasta}" -M "${conpair_markerbed_file}"
+
+    # calculate concordance between two tumor and normal pairs #
+    verify_concordance.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${concordance_txt}" -M "${conpair_markertxt_file}" -C 50
+
+    # estimate contaminaton level for tumor and normal
+    estimate_tumor_normal_contamination.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${contamination_txt}" -M "${conpair_markertxt_file}"
+
     """
 }
 
@@ -4884,6 +4931,7 @@ done_copy_samplesheet.concat(
     done_merge_signatures_plots,
     done_merge_signatures_pie_plots,
     done_msisensor,
+    done_conpair,
     done_mutect2,
     done_annotate,
     done_annotate_pairs,
@@ -5144,6 +5192,9 @@ process run_qc {
 
     # MSI summary 
     msi_summary.py -rdir "${PWD}/output" -s ${demuxSamplesheet}
+
+    # Conpair summary
+    conpair_summary.py -rdir "${PWD}/"
 
     # Hotspot qc
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
