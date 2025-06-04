@@ -17,9 +17,11 @@ def parse_contamination(rundir_path):
             tumor = None
             for line in lines:
                 if "Normal sample contamination level" in line:
-                    normal = float(line.split(":")[1].strip().replace('%', ''))
+                    val_normal = float(line.split(":")[1].strip().replace('%', ''))
+                    normal = "<0.1" if val_normal < 0.1 else val_normal
                 elif "Tumor sample contamination level" in line:
-                    tumor = float(line.split(":")[1].strip().replace('%', ''))
+                    val_tumor = float(line.split(":")[1].strip().replace('%', ''))
+                    tumor = "<0.1" if val_tumor < 0.1 else val_tumor
         contamination_df.append([sampleID, normal, tumor])
     return pd.DataFrame(contamination_df, columns=["SampleID", "Normal_contamination", "Tumor_contamination"])
 

@@ -49,3 +49,4 @@ Sample,Gene,Position,Variant,Strelka,LoFreqSomatic,Mutect
 1,TP53,chr17:7578406,c.524G>A;p.R175H,,,
 1,SF3B1,chr2:198266834,c.2098A>G;p.K700E,,,
 1,POLE,chr12:133250289,c.1231G>T;p.V411L,,,
+1,ERBB2,chr17:37876062,c.1922_1941del20;p.G641fs,,,
