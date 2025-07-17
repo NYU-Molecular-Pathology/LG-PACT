@@ -15,19 +15,23 @@ import re
 # Function to process individual pileup files
 def process_pileup_file(file_path):
     # Read the pileup file into a DataFrame (space-separated, no header)
-    data = pd.read_csv(file_path, sep=" ", header=None)
+    try:
+        data = pd.read_csv(file_path, sep=" ", header=None)
+    except pd.errors.EmptyDataError:
+        print(f"The file {file_path} is empty, an empty DataFrame was created.")
+        return pd.DataFrame()
+    else:
+        # Create POS by concatenating the first two columns (chromosome and position)
+        data["POS"] = data[0].astype(str) + ":" + data[1].astype(str)
     
-    # Create POS by concatenating the first two columns (chromosome and position)
-    data["POS"] = data[0].astype(str) + ":" + data[1].astype(str)
+        # Column 2 is used as the reference allele (REF)
+        data["REF"] = data[2]
     
-    # Column 2 is used as the reference allele (REF)
-    data["REF"] = data[2]
-    
-    # Calculate the REF ratio if read depth > 50; else assign NaN
-    data["Ratio"] = data.apply(lambda row: row[3].count(row["REF"]) / len(row[3]) 
+        # Calculate the REF ratio if read depth > 50; else assign NaN
+        data["Ratio"] = data.apply(lambda row: row[3].count(row["REF"]) / len(row[3]) 
                                 if isinstance(row[3], str) and len(row[3]) > 50 else np.nan, axis=1)
     
-    # Return DataFrame with POS, REF, and calculated ratio
+        # Return DataFrame with POS, REF, and calculated ratio
     return data[["POS", "REF", "Ratio"]]
 
 # Function to merge pileup data from multiple files
@@ -45,13 +49,15 @@ def merge_dataframes(dir_path,marker_bedfile):
             if file.endswith(".pileup"):
                 file_path = os.path.join(root, file)
                 data = process_pileup_file(file_path)
-                data.rename(columns={"Ratio": os.path.splitext(file)[0]}, inplace=True)
-                
-                # Merge processed data
-                if final_df.empty:
-                    final_df = data
+                if data.empty:
+                    continue
                 else:
-                    final_df = pd.merge(final_df, data, on=["POS", "REF"], how='outer')
+                    data.rename(columns={"Ratio": os.path.splitext(file)[0]}, inplace=True)
+                    # Merge processed data
+                    if final_df.empty:
+                        final_df = data
+                    else:
+                        final_df = pd.merge(final_df, data, on=["POS", "REF"], how='outer')
     
     # Merge with marker positions to ensure all positions are retained
     final_df = pd.merge(markers, final_df, on=["POS"], how="outer")
@@ -70,8 +76,8 @@ def create_marker_ratiofile(path_to_pileup,rundir,marker_bedfile):
     
     other_columns_s = sorted(other_columns[2:])
     
-    # Rearrange columns: first two, then controls, then the rest
-    new_order = other_columns[:2] + control_columns + other_columns_s
+    # Rearrange columns: first two, remove controls, then the rest
+    new_order = other_columns[:2] + other_columns_s
     final_dataframe_reordered = final_dataframe[new_order]
     
     # Save to CSV
