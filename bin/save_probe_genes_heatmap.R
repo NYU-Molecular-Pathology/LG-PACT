@@ -75,6 +75,7 @@ get_coverage_data <- function(input_genes) {
     # Remove Hapmap and NTC columns
     cols2drop <- !grepl("NC_HAPMAP|NTC_H20", colnames(coverages_df))
     coverages_df <- coverages_df[, cols2drop]
+    coverages_df <- coverages_df[order(coverages_df$gene), ]
     return(coverages_df)
 }
 
