@@ -2391,7 +2391,7 @@ process mutect2 {
     set val(comparisonID), val(tumorID), file(tumorBam), file(tumorBai), val(normalID), file(normalBam), file(normalBai), file(ref_fasta), file(ref_fai), file(ref_dict), file("targets.bed"), file(dbsnp_ref_vcf), file(dbsnp_ref_vcf_idx), file(cosmic_ref_vcf), file(cosmic_ref_vcf_idx), val(chunkLabel) from samples_dd_ra_rc_bam_pairs_ref_gatk_chrom
 
     output:
-    set val(caller), val("${callerType}"), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${norm_vcf}") into vcfs_mutect2
+    set val(caller), val("${callerType}"), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${norm_vcf}") into (vcfs_mutect2, vcfs_mutect3)
     set val(caller), val("${callerType}"), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${norm_vcf}") into samples_mutect3
     file("${vcf_file}")
     file("${norm_vcf}")
@@ -2459,8 +2459,8 @@ process lofreq_somatic {
     file("${final_indels_vcf_gz}")
     // file("${final_minus_dbsnp_snvs_vcf_gz}")
     // file("${final_minus_dbsnp_indels_vcf_gz}")
-    set val("${caller}"), val("snvs"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_snvs_vcf_norm}") into vcfs_lofreq_somatic_snvs_vcf_norm
-    set val("${caller}"), val("indels"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_indels_vcf_norm}") into vcfs_lofreq_somatic_indels_vcf_norm
+    set val("${caller}"), val("snvs"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_snvs_vcf_norm}") into (vcfs_lofreq_somatic_snvs_vcf_norm, vcfs_lofreq_somatic_snvs_vcf_norm2)
+    set val("${caller}"), val("indels"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_indels_vcf_norm}") into (vcfs_lofreq_somatic_indels_vcf_norm, vcfs_lofreq_somatic_indels_vcf_norm2)
     // set val("${caller}"), val("snvs-minus-dbsnp"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_minus_dbsnp_snvs_vcf_norm}") into vcfs_lofreq_somatic_snvs_minus_dbsnp_vcf_norm
     // set val("${caller}"), val("indels-minus-dbsnp"), val(comparisonID), val(tumorID), val(normalID), val("${chunkLabel}"), file("${final_minus_dbsnp_snvs_vcf_norm}") into vcfs_lofreq_somatic_indels_minus_dbsnp_vcf_norm
 
@@ -2687,7 +2687,7 @@ process normalize_vcfs_pairs {
     set val(caller), val(callerType), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file(vcf), file(ref_fasta), file(ref_fai), file(ref_dict) from raw_vcfs_pairs.combine(ref_fasta21).combine(ref_fai21).combine(ref_dict21)
 
     output:
-    set val(caller), val(callerType), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${norm_vcf}") into norm_vcfs_pairs
+    set val(caller), val(callerType), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${norm_vcf}") into (norm_vcfs_pairs, norm_vcfs_pairs2)
 
     script:
     prefix = "${comparisonID}.${caller}.${callerType}.${chunkLabel}"
@@ -2698,6 +2698,263 @@ process normalize_vcfs_pairs {
         bcftools norm --fasta-ref "${ref_fasta}" --output-type v - > \
         "${norm_vcf}"
         """
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Sophia Integration SNV VCF ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// Prepare normalized VCFs for concatenation per caller per sample 
+norm_vcfs_pairs2.mix(
+    vcfs_mutect3,
+    vcfs_lofreq_somatic_snvs_vcf_norm2,
+    vcfs_lofreq_somatic_indels_vcf_norm2).set { norm_vcfs_for_concat }
+
+process bgzip_index_vcfs {
+    // BGZip and index normalized VCFs for concatenation
+    tag "${caller}.${tumorID}"
+    publishDir "${params.outputDir}/variants/${caller}/bgzipped", mode: 'copy', pattern: "*${vcf_gz}"
+    publishDir "${params.outputDir}/variants/${caller}/bgzipped", mode: 'copy', pattern: "*${vcf_gz_tbi}"
+
+    input:
+    set val(caller), val(callerType), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file(vcf) from norm_vcfs_for_concat
+
+    output:
+    set val(caller), val(callerType), val(comparisonID), val(tumorID), val(normalID), val(chunkLabel), file("${vcf_gz}"), file("${vcf_gz_tbi}") into bgzipped_vcfs
+    val(comparisonID) into done_bgzip_index_vcfs
+
+    script:
+    vcf_gz = "${vcf}.gz"
+    vcf_gz_tbi = "${vcf}.gz.tbi"
+    """
+    bgzip -c "${vcf}" > "${vcf_gz}"
+    bcftools index -t "${vcf_gz}"
+    """
+}
+
+// Group and sort bgzipped VCFs per caller per sample
+bgzipped_vcfs
+    .groupTuple(by: [0, 2])
+    .map { caller, callerType, comparisonID, tumorID, normalID, chunkLabel, vcf_gz, vcf_gz_tbi ->
+        
+        // println "\n=== Caller: ${caller}, ComparisonID: ${comparisonID} ==="
+        // println "Before sort - callerTypes: ${callerType}"
+        // println "Before sort - chunkLabels: ${chunkLabel}"
+        // println "Before sort - VCF files: ${vcf_gz*.name}"
+        
+        // Create a list of indices and sort them
+        def size = chunkLabel.size()
+        def indices = (0..<size).collect { it }.sort { i, j ->
+            if (caller == 'MuTect2') {
+                // Sort by chunkLabel numerically for MuTect2
+                return (chunkLabel[i] as Integer) <=> (chunkLabel[j] as Integer)
+            } else if (caller == 'Strelka' || caller == 'LoFreqSomatic') {
+                // Sort by callerType: snvs/snv first, then indels/indel
+                def typeOrder = { type ->
+                    if (type ==~ /snv.?/) return 0  // snv or snvs
+                    if (type ==~ /indel.?/) return 1  // indel or indels
+                    return 2  // other
+                }
+                return typeOrder(callerType[i]) <=> typeOrder(callerType[j])
+            } else {
+                // Default: sort by chunkLabel as string
+                return chunkLabel[i] <=> chunkLabel[j]
+            }
+        }
+        
+        // Create new sorted lists using collect
+        def sorted_vcfs = indices.collect { vcf_gz[it] }
+        def sorted_tbis = indices.collect { vcf_gz_tbi[it] }
+        def sorted_callerTypes = indices.collect { callerType[it] }
+        def sorted_chunkLabels = indices.collect { chunkLabel[it] }
+        
+        // println "After sort - callerTypes: ${sorted_callerTypes}"
+        // println "After sort - chunkLabels: ${sorted_chunkLabels}"
+        // println "After sort - VCF files: ${sorted_vcfs*.name}"
+        
+        [caller, comparisonID, sorted_vcfs, sorted_tbis]
+    }
+    .set { vcfs_grouped_by_caller_comparisonID }
+
+// Concatenate per-sample VCFs per caller
+process concat_sample_vcfs {
+    publishDir "${params.outputDir}/variants/${caller}/merged", mode: 'copy', pattern: "*${merged_vcf_gz}"
+    publishDir "${params.outputDir}/variants/${caller}/merged", mode: 'copy', pattern: "*${merged_vcf_gz_tbi}"
+
+    input:
+    set val(caller), val(comparisonID), file(vcf_list), file(tbi_list) from vcfs_grouped_by_caller_comparisonID
+    
+    output:
+    set val(caller), val(comparisonID), file("${merged_vcf_gz}"), file("${merged_vcf_gz_tbi}") into merged_vcfs_percaller_persample
+    set val(caller), val(comparisonID), file("${merged_vcf_gz}"), file("${merged_vcf_gz_tbi}") into strelka_merged_vcfs_percaller_persample
+    val(comparisonID) into done_concat_sample_vcfs
+
+    script:
+    prefix = "${comparisonID}.${caller}"
+    unsorted_vcf_gz = "${prefix}.unsorted.vcf.gz"
+    merged_vcf_gz = "${prefix}.merged.vcf.gz"
+    merged_vcf_gz_tbi = "${merged_vcf_gz}.tbi"
+
+    """
+    echo "Merging VCFs for ${caller} - ${comparisonID}"
+    echo "Number of VCF files: ${vcf_list.size()}"
+    echo "VCF files (in order):"
+    echo "${vcf_list.join('\n')}"
+    
+    # Create file list for bcftools
+    #ls -1 ${vcf_list.join(' ')} > vcf_files.txt
+    
+    # Merge VCFs using bcftools concat
+    # For MuTect2 chunks, use concat (ordered chunks)
+    # For Strelka2/LoFreqSomatic, use concat (SNVs then indels)
+    bcftools concat \
+        -a \
+        -Oz \
+        -o "${unsorted_vcf_gz}" \
+        ${vcf_list.join(' ')}
+        
+    # sort and index the unsorted merged VCF
+    bcftools sort \
+        -Oz \
+        -o "${merged_vcf_gz}" \
+        "${unsorted_vcf_gz}"
+
+    # Index the merged VCF
+    tabix -p vcf "${merged_vcf_gz}"
+    echo "Merge completed: ${merged_vcf_gz}"
+
+    """
+}
+
+/ Add GT field to Strelka VCFs (required for merging VCF from all 3 callers)
+process add_GT_to_Strelka_vcf {
+    publishDir "${params.outputDir}/variants/${caller}/merged/withGT", mode: 'copy', pattern: "*${vcf_withGT}"
+
+    input:
+    set val(caller), val(comparisonID), file(merged_vcf_gz), file(merged_vcf_gz_tbi) from strelka_merged_vcfs_percaller_persample.filter { it[0] == 'Strelka' }
+
+    output:
+    set val(caller), val(comparisonID), file("${vcf_withGT}") into strelka_merged_vcfs_percaller_persample_withGT
+    val(comparisonID) into done_add_GT_to_Strelka_vcf
+
+    script:
+    prefix = "${comparisonID}.${caller}"
+    vcf_withGT = "${prefix}.merged.withGT.vcf.gz"
+
+    """
+    # Add GT to format and header of Strelka VCF 
+    vcf-genotype-annotator "${merged_vcf_gz}" NORMAL . -o "${vcf_withGT}"
+    """
+}
+
+// Index strelka GT vcf
+process index_strelka_vcfwithGT {
+    publishDir "${params.outputDir}/variants/${caller}/merged/withGT", mode: 'copy', pattern: "*${vcf_withGT_gz_tbi}"
+
+    input:
+    set val(caller), val(comparisonID), file(vcf_withGT_gz) from strelka_merged_vcfs_percaller_persample_withGT
+
+    output:
+    set val(caller), val(comparisonID), file(vcf_withGT_gz), file("${vcf_withGT_gz_tbi}") into strelka_merged_vcfs_withGT
+    
+    script:
+    vcf_withGT_gz_tbi = "${vcf_withGT_gz}.tbi"
+    """
+    tabix -p vcf "${vcf_withGT_gz}"
+    """
+
+}
+
+// Filter out Strelka from merged_vcfs_percaller_persample (keep only MuTect2 and LoFreqSomatic)
+non_strelka_vcfs = merged_vcfs_percaller_persample.filter { it[0] != 'Strelka' }
+
+// Combine non-Strelka VCFs with Strelka withGT VCFs and group by comparisonID
+all_callers_vcfs_by_sample = non_strelka_vcfs
+    .mix(strelka_merged_vcfs_withGT)
+    .groupTuple(by: 1)  // Group by comparisonID (index 1)
+    .map { caller, comparisonID, vcf, tbi ->
+        // Define the desired order
+        def order = ['MuTect2', 'LoFreqSomatic', 'Strelka']
+        
+        // Create a map of caller to index
+        def callerIndex = [:]
+        caller.eachWithIndex { c, idx ->
+            callerIndex[c] = idx
+        }
+        
+        // Sort according to the desired order
+        def sortedCallers = []
+        def sortedVcfs = []
+        def sortedTbis = []
+        
+        order.each { c ->
+            if (callerIndex.containsKey(c)) {
+                def idx = callerIndex[c]
+                sortedCallers << caller[idx]
+                sortedVcfs << vcf[idx]
+                sortedTbis << tbi[idx]
+            }
+        }
+        
+        [comparisonID, sortedCallers, sortedVcfs, sortedTbis]
+    }
+
+// Merge and Filter VCFs from all 3 callers per sample
+process merge_all_callers_vcf {
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_all_callers", mode: 'copy', pattern: "*${merged_vcf}"
+
+    input:
+    set val(comparisonID), val(callers), file(vcfs), file(tbis) from all_callers_vcfs_by_sample.filter { !it[0].contains('NC_HAPMAP_HapMap-Pool') }
+
+    output:
+    set val(comparisonID), file("${merged_vcf}") into merged_all_callers_vcf
+    set val(comparisonID), file("${merged_filtered_vcf}") into merged_filtered_vcf
+    val(comparisonID) into done_merge_all_callers
+    
+    script:
+    merged_vcf = "${comparisonID}.merged_all_callers.vcf"
+    merged_filtered_vcf = "${comparisonID}.merged.filtered.vcf"
+    
+    // VCFs are ordered as: MuTect2, LoFreqSomatic, Strelka
+    mutect_vcf = vcfs[0]
+    lofreqsomatic_vcf = vcfs[1]
+    strelka_vcf = vcfs[2]
+    
+    """
+    # Merge VCFs from MuTect2, LoFreqSomatic, and Strelka
+    merge_vcf_callers.py \
+        --mutect ${mutect_vcf} \
+        --lofreqsomatic ${lofreqsomatic_vcf} \
+        --strelka ${strelka_vcf} \
+        --output ${merged_vcf} \
+        --add-source-tag
+
+    # Filter VCFs to keep only PASS and VAF >= 1%, no Strelka only variants
+    filter_merged_vcf.py \
+        --input ${merged_vcf} \
+        --output ${merged_filtered_vcf} \
+        --min-af 0.01 \
+        --exclude-strelka-only \
+        --clean-headers
+
+    """
+}
+
+process gzindex_merged_filtered_vcf {
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf_gz}"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf_gz_tbi}"
+
+    input:
+    set val(comparisonID), file(merged_filtered_vcf) from merged_filtered_vcf
+
+    output:
+    set val(comparisonID), file("${merged_filtered_vcf_gz}"), file("${merged_filtered_vcf_gz_tbi}") into final_merged_filtered_vcfs
+
+    script:
+    merged_filtered_vcf_gz = "${merged_filtered_vcf}.gz"
+    merged_filtered_vcf_gz_tbi = "${merged_filtered_vcf_gz}.tbi"
+
+    """
+    bgzip -c "${merged_filtered_vcf}" > "${merged_filtered_vcf_gz}"
+    tabix -p vcf "${merged_filtered_vcf_gz}"
+    """
 }
 
 // get all the paired sample vcfs for downstream processing
@@ -3603,6 +3860,7 @@ process caller_variants_tmb_validation_2callers {
 
     output:
     file("${tmb_tsv}")
+    val(tmb_tsv) into done_tmb
 
     script:
     //annotations.MuTect2.tsv
@@ -3878,7 +4136,7 @@ process cnvkit_extract_trusted_genes {
 
     output:
     set val(tumorID), val(normalID), file("${output_final_cns}") into cnvs_cns
-    set val(comparisonID), val(tumorID), val(normalID), file("${output_final_cns}") into (cnvs_cns2, cnvs_cns3, cnvs_cns4)
+    set val(comparisonID), val(tumorID), val(normalID), file("${output_final_cns}") into (cnvs_cns2, cnvs_cns3, cnvs_cns4, cnvs_cns5)
 
 
     script:
@@ -3889,6 +4147,106 @@ process cnvkit_extract_trusted_genes {
     # Get the trusted genes and their segment gain loss info from segment_gainloss file and write to final.cns
     cat "${segment_gainloss}" | head -n +1 > "${output_final_cns}"
     grep -w -f "${trusted_genes}" "${segment_gainloss}" >> "${output_final_cns}"
+    """
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Sophia Integration CNV VCF ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ //
+// export CNV calls (final.cns) to VCF format for Sophia integration
+process cnvkit_cnv_to_vcf {
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf", mode: 'copy'
+
+    input:
+    set val(comparisonID), val(tumorID), val(normalID), file(final_cns) from cnvs_cns5
+
+    output:
+    set val(comparisonID), val(tumorID), val(normalID), file("${output_vcf}") into cnvkit_cnv_vcfs
+
+    script:
+    output_vcf = "${comparisonID}.vcf"
+    """
+    cnvkit.py export vcf "${final_cns}" -o "${output_vcf}"
+    """
+}
+
+// Add custom CN value and SVType annotations (eg:amplification,loh,gain,loss etc) to exported cnvkit VCF
+process modify_cnv_to_vcf {
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf_modified", mode: 'copy'
+
+    input:
+    set val(comparisonID), val(tumorID), val(normalID), file(cnv_vcf) from cnvkit_cnv_vcfs
+
+    output:
+    set val(comparisonID), file("${output_vcf}") into cnvkit_cnv_vcfs_modified
+
+    script:
+    output_vcf = "${comparisonID}.CNV.vcf"
+    """
+    cnvkit_vcf_modify.py -i "${cnv_vcf}" -o "${output_vcf}" -s "TUMOR"
+    """
+}
+
+process gzindex_modified_cnv_vcf {
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf_modified", mode: 'copy', pattern: "*${output_vcf_gz}"
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf_modified", mode: 'copy', pattern: "*${output_vcf_tbi}"
+
+    input:
+    set val(comparisonID), file(cnv_vcf) from cnvkit_cnv_vcfs_modified
+
+    output:
+    set val(comparisonID), file("${output_vcf_gz}"), file("${output_vcf_tbi}") into cnv_vcfs_final
+
+    script:
+    output_vcf_gz = "${comparisonID}.CNV.vcf.gz"
+    output_vcf_tbi = "${comparisonID}.CNV.vcf.gz.tbi"
+    """
+    bgzip -c "${cnv_vcf}" > "${output_vcf_gz}"
+    tabix -p vcf "${output_vcf_gz}"
+    """
+}
+
+// Combine the two channels by comparisonID
+final_merged_filtered_vcfs
+    .join(cnv_vcfs_final, by: 0)
+    .set { merged_snv_and_cnv_vcf }
+
+// The merged channel will have the structure:
+// [comparisonID, snv_vcf_gz, snv_vcf_tbi, cnv_vcf_gz, cnv_vcf_tbi]
+
+// Merge the SNV VCF and CNV VCF into a single VCF for Sophia
+process merge_snv_and_cnv_vcfs {
+    //publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy'
+
+    input:
+    set val(comparisonID), file(snv_vcf_gz), file(snv_vcf_tbi), file(cnv_vcf_gz), file(cnv_vcf_tbi) from merged_snv_and_cnv_vcf
+
+    output:
+    set val(comparisonID), file("${output_merged_vcf}") into merged_snv_cnv_vcfs
+
+    script:
+    output_merged_vcf = "${comparisonID}.vcf"
+
+    """
+    combine_vcf.py -s "${snv_vcf_gz}" -c "${cnv_vcf_gz}" -o "${output_merged_vcf}"
+    """
+}
+
+process gzindex_merge_snv_and_cnv_vcfs {
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf_gz}"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf_gz_tbi}"
+
+    input:
+    set val(comparisonID), file(merged_vcf) from merged_snv_cnv_vcfs
+
+    output:
+    set val(comparisonID), file("${merged_vcf_gz}"), file("${merged_vcf_gz_tbi}") into final_merged_snv_cnv_vcfs
+
+    script:
+    merged_vcf_gz = "${merged_vcf}.gz"
+    merged_vcf_gz_tbi = "${merged_vcf_gz}.tbi"
+
+    """
+    bgzip -c "${merged_vcf}" > "${merged_vcf_gz}"
+    tabix -p vcf "${merged_vcf_gz}"
     """
 }
 
@@ -4601,6 +4959,12 @@ process run_qc {
     file(snp_marker_bedfile) from snp_markerbed_file2
     file(ngs607dir) from ngs607_dir
 
+    output:
+    val('done') into done_runqc
+    file('msi_validation.tsv') into msi_file
+    file('run_qc.tsv') into run_qc_file
+    file('hsmetrics-report.html') into hsmetrics_file
+
     script:
     """
     pactid="\$(cat ${demuxSamplesheet} | sed -n '4p' | awk -F ',' '{print \$2}')" 
@@ -4611,6 +4975,7 @@ process run_qc {
 
     # generate Run QC
     generate_html_report.py -o "${PWD}/" -p "\${pactid}" -r "\${runid}" -s ${seracare_selected_variants_dist}
+    cp "${PWD}/\${pactid}-QC.tsv" run_qc.tsv
 
     # SeraCare QC 
     seracare_af_qc.py -rid "\${runid}" -rdir "${PWD}/output" -sct ${sc_truth_set} -ngsdir ${ngs607dir}
@@ -4623,12 +4988,14 @@ process run_qc {
 
     # CollectHsmetric qc
     hsmetrics_summary.py -rdir "${PWD}/" -tnss ${sampleTumorNormalCsv}
+    cp "${PWD}/output/clinical/hsmetrics-report.html" hsmetrics-report.html
 
     # CollectInsertSizeMetric qc
     insertsizemetrics_summary.py -rdir "${PWD}/"
 
     # MSI summary 
     msi_summary.py -rdir "${PWD}/output" -s ${demuxSamplesheet}
+    cp "${PWD}/output/clinical/msi_validation.tsv" msi_validation.tsv
 
     # Conpair summary
     conpair_summary.py -rdir "${PWD}/"
@@ -4638,6 +5005,58 @@ process run_qc {
 
     # SNP QC
     snpqc.py --pileup_path "${PWD}/output/SNPPileup" --runid "\${runid}" --rundir "${PWD}/output"  --marker_bedfile ${snp_marker_bedfile}
+    """
+}
+
+// wait for msi and tmb to be done
+done_tmb.concat(done_runqc).into{ files_for_vcf_header; files_for_vcf_header2 }
+
+//~~~~~~~~~~~~~~~~~~ Sophia Integration Add Custom MSI/TMB/QC/HSMETRICS to VCF ~~~~~~~~~~~~~~//
+process batch_add_msi_tmb {
+    // Batch add MSI and TMB custom headers to VCF files
+    publishDir "${params.outputDir}/variants/vcf_processing/vcf_msi_tmb", mode: 'copy'
+    
+    input:
+    val(tmb_runqc_all) from files_for_vcf_header.collect()
+    file(msi_tsv) from msi_file
+
+    output:
+    val('msi_tmb') into done_msi_tmb
+    
+    script:
+    """
+    # Run batch MSI/TMB as header to vcf
+    batch_add_msi_tmb.py \
+        --vcf-dir "${PWD}/output/variants/vcf_processing/merged_snv_cnv" \
+        --msi "${msi_tsv}" \
+        --tmb "${PWD}/output/annotations.paired.tmb.validation.2callers.tsv" \
+        --output-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb"
+    """
+}
+
+process batch_add_qc_hsmetrics {
+    // Batch add QC and Hsmetrics custom headers to VCF files
+    publishDir "${params.outputDir}/variants/vcf_processing/vcf_msi_tmb_qc_hsmetrics", mode: 'copy'
+    
+    input:
+    val(tmb_runqc_all) from files_for_vcf_header2.collect()
+    val(msi_tmb) from done_msi_tmb
+    file(run_qc_tsv) from run_qc_file
+    file(hsmetrics_html) from hsmetrics_file
+    file(sampleTumorNormalCsv) from sample_Tumor_Normal_sheet2
+
+    output:
+    val('sop_qc') into done_qc
+    
+    script:
+    """
+    # Run batch QC and Hsmetrics as header to vcf
+    batch_add_qc_hsmetrics.py \
+        --qc-file "${run_qc_tsv}" \
+        --hsmetrics-file "${hsmetrics_html}" \
+        --pairing-file "${sampleTumorNormalCsv}" \
+        --vcf-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb" \
+        --output-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb_qc_hsmetrics" 
     """
 }
 
