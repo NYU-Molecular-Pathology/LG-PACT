@@ -2823,7 +2823,7 @@ process concat_sample_vcfs {
     """
 }
 
-/ Add GT field to Strelka VCFs (required for merging VCF from all 3 callers)
+// Add GT field to Strelka VCFs (required for merging VCF from all 3 callers)
 process add_GT_to_Strelka_vcf {
     publishDir "${params.outputDir}/variants/${caller}/merged/withGT", mode: 'copy', pattern: "*${vcf_withGT}"
 
@@ -5036,7 +5036,7 @@ process batch_add_msi_tmb {
 
 process batch_add_qc_hsmetrics {
     // Batch add QC and Hsmetrics custom headers to VCF files
-    publishDir "${params.outputDir}/variants/vcf_processing/vcf_msi_tmb_qc_hsmetrics", mode: 'copy'
+    publishDir "${params.outputDir}/sophia_vcf_final", mode: 'copy'
     
     input:
     val(tmb_runqc_all) from files_for_vcf_header2.collect()
@@ -5056,7 +5056,7 @@ process batch_add_qc_hsmetrics {
         --hsmetrics-file "${hsmetrics_html}" \
         --pairing-file "${sampleTumorNormalCsv}" \
         --vcf-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb" \
-        --output-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb_qc_hsmetrics" 
+        --output-dir "${PWD}/output/sophia_vcf_final" 
     """
 }
 

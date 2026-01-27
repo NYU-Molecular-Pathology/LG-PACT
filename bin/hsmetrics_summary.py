@@ -31,6 +31,9 @@ def hsmetrics_summary(rundir_path):
 
 def hsmetric_report(rundir_path):
     df_final = hsmetrics_summary(rundir_path)
+    # need all hsmetrics columns for qc filtering
+    hsmetrics_summary_output_path = rundir_path+"output/clinical/"+"hsmetrics_summary.csv"
+    df_final.to_csv(hsmetrics_summary_output_path,index=False)
     df_final_select_cols_for_htmlreport = df_final[['SampleID','ON_BAIT_BASES','MEAN_BAIT_COVERAGE','PCT_TARGET_BASES_50X','PCT_TARGET_BASES_250X','PCT_USABLE_BASES_ON_BAIT','PCT_USABLE_BASES_ON_TARGET','TOTAL_READS','PF_READS','ON_TARGET_BASES','MEAN_TARGET_COVERAGE','FOLD_80_BASE_PENALTY','AT_DROPOUT','GC_DROPOUT']]
     hsmetric_html_df = df_final_select_cols_for_htmlreport.sort_values(by=['SampleID'])
 
