@@ -331,9 +331,12 @@ def process_vcf_files(vcf_files, headers, args):
         base_name = get_base_name(vcf_path)
         
         if args.output_dir:
-            output_path = os.path.join(args.output_dir, f"{base_name}{args.suffix}.vcf.gz")
+            output_path = os.path.join(args.output_dir, f"{base_name}.vcf.gz")
         else:
-            output_path = vcf_path.replace('.vcf.gz', f'{args.suffix}.vcf.gz').replace('.vcf', f'{args.suffix}.vcf.gz')
+            if vcf_path.endswith('.vcf.gz'):
+                output_path = vcf_path
+            else:
+                output_path = vcf_path.replace('.vcf', '.vcf.gz')
         
         if args.dry_run:
             print(f"[DRY RUN] {vcf_basename} -> {os.path.basename(output_path)} ({len(headers)} headers)")
@@ -376,7 +379,6 @@ Output:
     parser.add_argument('--pattern', default='*.vcf*', help='Glob pattern for VCF files (default: *.vcf*)')
     parser.add_argument('--insert-after', choices=['fileformat', 'msi_tmb', 'contig'], 
                        default='msi_tmb', help='Where to insert headers (default: msi_tmb)')
-    parser.add_argument('--suffix', default='_qc', help='Suffix for output files (default: _qc)')
     parser.add_argument('--dry-run', action='store_true', help='Preview without modifying files')
     
     args = parser.parse_args()

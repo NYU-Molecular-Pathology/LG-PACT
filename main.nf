@@ -2938,14 +2938,15 @@ process merge_all_callers_vcf {
 }
 
 process gzindex_merged_filtered_vcf {
-    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf_gz}"
-    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf_gz_tbi}"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf}.gz"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_filtered", mode: 'copy', pattern: "*${merged_filtered_vcf}.gz.tbi"
 
     input:
     set val(comparisonID), file(merged_filtered_vcf) from merged_filtered_vcf
 
     output:
-    set val(comparisonID), file("${merged_filtered_vcf_gz}"), file("${merged_filtered_vcf_gz_tbi}") into final_merged_filtered_vcfs
+    // Reference the input VCF directly so Nextflow can statically evaluate outputs
+    set val(comparisonID), file("${merged_filtered_vcf}.gz"), file("${merged_filtered_vcf}.gz.tbi") into final_merged_filtered_vcfs
 
     script:
     merged_filtered_vcf_gz = "${merged_filtered_vcf}.gz"
@@ -4231,14 +4232,14 @@ process merge_snv_and_cnv_vcfs {
 }
 
 process gzindex_merge_snv_and_cnv_vcfs {
-    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf_gz}"
-    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf_gz_tbi}"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf}.gz"
+    publishDir "${params.outputDir}/variants/vcf_processing/merged_snv_cnv", mode: 'copy', pattern: "*${merged_vcf}.gz.tbi"
 
     input:
     set val(comparisonID), file(merged_vcf) from merged_snv_cnv_vcfs
 
     output:
-    set val(comparisonID), file("${merged_vcf_gz}"), file("${merged_vcf_gz_tbi}") into final_merged_snv_cnv_vcfs
+    set val(comparisonID), file("${merged_vcf}.gz"), file("${merged_vcf}.gz.tbi") into final_merged_snv_cnv_vcfs
 
     script:
     merged_vcf_gz = "${merged_vcf}.gz"
@@ -5014,13 +5015,14 @@ done_tmb.concat(done_runqc).into{ files_for_vcf_header; files_for_vcf_header2 }
 //~~~~~~~~~~~~~~~~~~ Sophia Integration Add Custom MSI/TMB/QC/HSMETRICS to VCF ~~~~~~~~~~~~~~//
 process batch_add_msi_tmb {
     // Batch add MSI and TMB custom headers to VCF files
-    publishDir "${params.outputDir}/variants/vcf_processing/vcf_msi_tmb", mode: 'copy'
+    publishDir "${params.outputDir}/variants/vcf_processing/", mode: 'copy'
     
     input:
     val(tmb_runqc_all) from files_for_vcf_header.collect()
     file(msi_tsv) from msi_file
 
     output:
+    file('vcf_msi_tmb/*') into done_msi_tmb_files
     val('msi_tmb') into done_msi_tmb
     
     script:
@@ -5030,13 +5032,13 @@ process batch_add_msi_tmb {
         --vcf-dir "${PWD}/output/variants/vcf_processing/merged_snv_cnv" \
         --msi "${msi_tsv}" \
         --tmb "${PWD}/output/annotations.paired.tmb.validation.2callers.tsv" \
-        --output-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb"
+        --output-dir "vcf_msi_tmb"
     """
 }
 
 process batch_add_qc_hsmetrics {
     // Batch add QC and Hsmetrics custom headers to VCF files
-    publishDir "${params.outputDir}/sophia_vcf_final", mode: 'copy'
+    publishDir "${params.outputDir}/", mode: 'copy'
     
     input:
     val(tmb_runqc_all) from files_for_vcf_header2.collect()
@@ -5044,8 +5046,10 @@ process batch_add_qc_hsmetrics {
     file(run_qc_tsv) from run_qc_file
     file(hsmetrics_html) from hsmetrics_file
     file(sampleTumorNormalCsv) from sample_Tumor_Normal_sheet2
+    file(vcf_msi_tmb) from done_msi_tmb_files
 
     output:
+    file('sophia_vcf_final/*') into final_vcfs
     val('sop_qc') into done_qc
     
     script:
@@ -5056,7 +5060,7 @@ process batch_add_qc_hsmetrics {
         --hsmetrics-file "${hsmetrics_html}" \
         --pairing-file "${sampleTumorNormalCsv}" \
         --vcf-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb" \
-        --output-dir "${PWD}/output/sophia_vcf_final" 
+        --output-dir "sophia_vcf_final" 
     """
 }
 
