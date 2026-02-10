@@ -3793,7 +3793,7 @@ process gatk_CallableLoci {
     -summary "${output_summary}" \
     --minMappingQuality 20 \
     --minBaseQuality 20 \
-    --minDepth 500 \
+    --minDepth 200 \
     --intervals "${targets_bed}" \
     -o "${output_bed}"
 

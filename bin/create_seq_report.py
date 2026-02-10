@@ -234,5 +234,6 @@ class seq_qc_report:
         run_QC_df["Sample"] = run_QC_df["Sample"].str.split("_", n=5, expand = True)[5]
         seq_QC_df["Sample"] = seq_QC_df["Sample"].str.split("_", n=5, expand = True)[5]
         seq_QC_df.to_csv(os.path.join(doc_root,'%s-QC.tsv'%self.args.project), sep="\t", index = False)
+        run_QC_df.to_csv(os.path.join(doc_root,'%s-RunQC.tsv'%self.args.project), sep="\t", index = False)
 
         return {"run_df":run_QC_df,"df":seq_QC_df, "SeraCare":pos_control_variants,"caseID":self.args.project,"run":self.args.run}
