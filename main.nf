@@ -2946,7 +2946,7 @@ process gzindex_merged_filtered_vcf {
 
     output:
     // Reference the input VCF directly so Nextflow can statically evaluate outputs
-    set val(comparisonID), file("${merged_filtered_vcf}.gz"), file("${merged_filtered_vcf}.gz.tbi") into final_merged_filtered_vcfs
+    set val(comparisonID), file("${merged_filtered_vcf}.gz"), file("${merged_filtered_vcf}.gz.tbi") into (final_merged_filtered_vcfs, final_merged_filtered_vcfs2)
 
     script:
     merged_filtered_vcf_gz = "${merged_filtered_vcf}.gz"
@@ -3828,8 +3828,8 @@ process callable_loci_table {
 
 callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
 .into { sample_loci_collected; sample_loci_collected2}
-Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3 }
-Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2}
+Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3; demux_sample_sheet4 }
+Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2; sample_Tumor_Normal_sheet3 }
 
 
 process caller_variants_tmb_validation {
@@ -4194,7 +4194,7 @@ process gzindex_modified_cnv_vcf {
     set val(comparisonID), file(cnv_vcf) from cnvkit_cnv_vcfs_modified
 
     output:
-    set val(comparisonID), file("${output_vcf_gz}"), file("${output_vcf_tbi}") into cnv_vcfs_final
+    set val(comparisonID), file("${output_vcf_gz}"), file("${output_vcf_tbi}") into (cnv_vcfs_final, cnv_vcfs_final2)
 
     script:
     output_vcf_gz = "${comparisonID}.CNV.vcf.gz"
@@ -4205,9 +4205,82 @@ process gzindex_modified_cnv_vcf {
     """
 }
 
-// Combine the two channels by comparisonID
+// -------------------- Sophia placeholder CNV logic to handle samples with no CNV --------------------
+// Collect SNV comparisonIDs (list)
 final_merged_filtered_vcfs
-    .join(cnv_vcfs_final, by: 0)
+    .map { comparisonID, snv_vcf_gz, snv_vcf_tbi -> comparisonID }
+    .collect()
+    .set { all_snv_comparison_ids_list }
+
+// Collect produced CNV comparisonIDs (list)
+cnv_vcfs_final
+    .map { comparisonID, cnv_vcf_gz, cnv_vcf_tbi -> comparisonID }
+    .collect()
+    .set { all_cnv_comparison_ids_list }
+
+// Concatenate both channels and collect into a list
+all_snv_comparison_ids_list
+    .concat(all_cnv_comparison_ids_list)
+    .toList()
+    .map { lists ->
+        def snv_list = lists[0]
+        def cnv_list = lists[1]
+        def missing = snv_list - cnv_list
+        println "[INFO] SNV samples: ${snv_list.size()}"
+        println "[INFO] CNV samples: ${cnv_list.size()}"
+        println "[INFO] Missing CNV for ${missing.size()} samples: ${missing}"
+        return missing
+    }
+    .flatten()
+    .into { missing_cnv_ids_for_log; missing_cnv_ids_for_process }
+
+// missing_cnv_ids_for_log.view { "[INFO] Creating placeholder CNV for: ${it}" }
+
+// Create placeholder CNV VCFs for each missing sample
+process create_placeholder_cnv {
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf_modified", mode: 'copy', pattern: "*${comparisonID}.CNV.vcf.gz"
+    publishDir "${params.outputDir}/cnv/cnvkit_sophia/vcf_modified", mode: 'copy', pattern: "*${comparisonID}.CNV.vcf.gz.tbi"
+
+    input:
+    val(comparisonID) from missing_cnv_ids_for_process
+
+    output:
+    set val(comparisonID), file("${comparisonID}.CNV.vcf.gz"), file("${comparisonID}.CNV.vcf.gz.tbi") into cnv_vcfs_final_placeholders
+
+    script:
+    """
+    cat > ${comparisonID}.CNV.vcf <<'VCF'
+##fileformat=VCFv4.2
+##source=CNVkit v0.9.0
+##INFO=<ID=CIEND,Number=2,Type=Integer,Description="Confidence interval around END for imprecise variants">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around POS for imprecise variants">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description="Imprecise structural variation">
+##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=FOLD_CHANGE,Number=1,Type=Float,Description="Fold change">
+##INFO=<ID=FOLD_CHANGE_LOG,Number=1,Type=Float,Description="Log fold change">
+##INFO=<ID=PROBES,Number=1,Type=Integer,Description="Number of probes in CNV">
+##ALT=<ID=DEL,Description="Deletion">
+##ALT=<ID=DUP,Description="Duplication">
+##ALT=<ID=CNV,Description="Copy number variable region">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Float,Description="Genotype quality">
+##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Copy number genotype for imprecise events">
+##FORMAT=<ID=CNQ,Number=1,Type=Float,Description="Copy number genotype quality for imprecise events">
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tTUMOR
+VCF
+    bgzip -c ${comparisonID}.CNV.vcf > ${comparisonID}.CNV.vcf.gz
+    tabix -p vcf ${comparisonID}.CNV.vcf.gz
+    """
+}
+
+// Merge CNV outputs and placeholders
+cnv_vcfs_final2.mix(cnv_vcfs_final_placeholders).set { cnv_vcfs_final_complete }
+
+// Combine the two channels by comparisonID
+final_merged_filtered_vcfs2
+    .join(cnv_vcfs_final_complete, by: 0)
     .set { merged_snv_and_cnv_vcf }
 
 // The merged channel will have the structure:
@@ -4907,7 +4980,7 @@ done_copy_samplesheet.concat(
     done_update_updated_coverage_interval_tables_collected,
     done_split_annotation_table_paired
     )
-    .into { all_done; all_done2; all_done3 }
+    .into { all_done; all_done2; all_done3; all_done4 }
 
 
 // collect failed log messages
@@ -5006,6 +5079,29 @@ process run_qc {
 
     # SNP QC
     snpqc.py --pileup_path "${PWD}/output/SNPPileup" --runid "\${runid}" --rundir "${PWD}/output"  --marker_bedfile ${snp_marker_bedfile}
+    """
+}
+
+process save_exome_cvg {
+    publishDir "${params.outputDir}/Exome_Cvg", mode: 'copy'
+
+    input:
+    val(all_vals) from all_done4.collect()
+    file(demux_ss) from demux_sample_sheet4
+    file(samples_pairs) from sample_Tumor_Normal_sheet3
+
+    output:
+    file("*_Normal_PerTargetCoverage_200.csv")
+    file("*_Tumor_PerTargetCoverage_200.csv")
+    file("*_normals_percentages_200.csv")
+    file("*_tumors_percentages_200.csv")
+
+    script:
+    """
+    PACT_ID="\$(cat ${demux_ss} | sed -n '4p' | awk -F ',' '{print \$2}')" 
+    RUN_ID="\$(echo ${PWD} | tr '/' '\n' | tail -n 1)"
+
+    exome_cvg_200_csv.R "\${RUN_ID}" "\${PACT_ID}" "${PWD}/output/CollectHsMetrics" "${demux_ss}" "${samples_pairs}"
     """
 }
 
