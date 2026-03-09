@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Modify SVTYPE in CNVkit VCF file based on CN and FOLD_CHANGE_LOG values:
-- If CN present and CN > 5: SVTYPE = Amplification
-- If CN present and 3 <= CN <= 5: SVTYPE = Gain
+- If CN present and CN >= 5: SVTYPE = Amplification
+- If CN present and 3 <= CN < 5: SVTYPE = Gain
 - If CN present and CN = 2: SVTYPE = Neutral
 - If FOLD_CHANGE_LOG <= -1.1: SVTYPE = Loss and add CN=0
 - If -1.1 < FOLD_CHANGE_LOG < 0: SVTYPE = LOH and add CN=1
@@ -75,9 +75,9 @@ def modify_vcf(input_file, output_file, sample_name=None):
             
             if has_cn and cn_value is not None:
                 # Rules for when CN is present
-                if cn_value > 5:
+                if cn_value >= 5:
                     new_svtype = 'Amplification'
-                elif 3 <= cn_value <= 5:
+                elif 3 <= cn_value < 5:
                     new_svtype = 'Gain'
                 elif cn_value == 2:
                     new_svtype = 'Neutral'
