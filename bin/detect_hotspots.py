@@ -2,10 +2,10 @@
 # ---------------------------
 # Script name: detect_hotspots.py
 # Purpose: Merge all raw variant call samples
-# Date Last Modified: February 7, 2024
-# Version: 1.1
+# Date Last Modified: March 17, 2024
+# Version: 1.2
 # Author: Jonathan Serrano
-# Copyright (c) NYULH Jonathan Serrano, 2024
+# Copyright (c) NYULH Jonathan Serrano, 2026
 # ---------------------------
 
 import os
@@ -14,6 +14,10 @@ import argparse
 import fnmatch
 from typing import List, Tuple
 import csv
+
+# TESTING ----------------
+#RESULTS_DIR = "/gpfs/data/molecpathlab/development/hotspot-test/results"
+
 
 def find(pattern, path):
     exclude_directories = set(['work'])
@@ -30,6 +34,7 @@ def output_caller_hotspots(out_df, caller, curr_sam, rundir):
     """Write the intermediate per-sample TSV file for Debugging"""
     fiName = curr_sam + "_Hotspots.tsv"
     outTsv = os.path.join(rundir, fiName)
+    #outTsv = os.path.join(RESULTS_DIR, fiName)
     if os.path.isfile(outTsv):
         df1 = pd.read_csv(outTsv, dtype=str, sep='\t')
         df1[caller] = out_df[caller]
@@ -42,6 +47,7 @@ def output_hotspots(out_df, pactid, rundir_output):
     """Write the final TSV output file"""
     fiName = pactid + "_Hotspots.tsv"
     outTsv = os.path.join(rundir_output, fiName)
+    #outTsv = os.path.join(RESULTS_DIR, fiName)
     out_df.to_csv(outTsv, sep="\t", mode='a', index=False)
     print(f"File saved: {outTsv}")
     print("Hotspot report is rendered!")
@@ -85,7 +91,7 @@ def make_base_df(samList: List[str], temp_df: pd.DataFrame, hotspot_samples: Lis
     if dropped_sams:
         print(f"The following samples were dropped because they do not have corresponding NGS number: {dropped_sams}")
     paired_list = zip(samList[:min_length], hotspot_samples[:min_length])
-    base_df = pd.concat([temp_df.assign(Sample=sam, Test_Number=hotspot) for sam, hotspot in paired_list], ignore_index=True)
+    base_df = pd.concat([temp_df.assign(Sample=sam, TM_Number=hotspot) for sam, hotspot in paired_list], ignore_index=True)
 
     return base_df, dropped_sams
 
@@ -176,9 +182,10 @@ def main(runid, pactid, rundir):
         is_tumor = demux_ss_file['Tumor_Type'].notna()
     if not is_tumor.any():
         print("Check the 'Tumor_Content' and 'Tumor_Type' columns")
-    ts_number = demux_ss_file.loc[is_tumor, 'Specimen_ID'].tolist()
-    hotspot_samples = demux_ss_file['Test_Number'].unique()
-    hotspot_samples = hotspot_samples[hotspot_samples != '0']
+    ts_number = demux_ss_file.loc[is_tumor, 'Case_ID'].tolist()
+    hotspot_samples = demux_ss_file['TM_Number'].unique()
+    hotspot_samples = pd.Series(hotspot_samples)
+    hotspot_samples = hotspot_samples[(hotspot_samples != '0') & (hotspot_samples != '') & (hotspot_samples.notna())].tolist()
     hotspot_variants = startParse(hotspot_samples, rundir_output, ts_number, rundir)
     output_hotspots(hotspot_variants, pactid, rundir_output)
 

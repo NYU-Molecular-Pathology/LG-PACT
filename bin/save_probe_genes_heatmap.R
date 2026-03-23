@@ -67,7 +67,7 @@ get_coverage_data <- function(input_genes) {
 
     rownames(coverages_df) <- coverages_df$name
     coverages_df$name <- NULL
-    new_cols <- stringr::str_split_fixed(colnames(coverages_df), "_", 6)[, 6]
+    new_cols <- stringr::str_split_fixed(colnames(coverages_df), "_", 2)[, 2]
     colnames(coverages_df) <- new_cols
     coverages_df$gene <- extract_gene_name(rownames(coverages_df))
     coverages_df <- coverages_df[coverages_df$gene %in% input_genes &

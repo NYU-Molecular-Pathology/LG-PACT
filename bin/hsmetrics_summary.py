@@ -15,7 +15,10 @@ def hsmetrics_summary(rundir_path):
     ##loop through each file, get sample name, line 7,8 ##
     all_dfs = []
     for file in hsmetric_files_list:
-        sampleID = file.split("/")[-1].split("_hs_metrics.txt")[0].split("_")[5]
+        if any(x in file for x in ["SC", "NTC", "NC"]):
+            sampleID = file.split("/")[-1].split("_hs_metrics.txt")[0].split("_")[5]
+        else:
+            sampleID = file.split("/")[-1].split("_hs_metrics.txt")[0].split("_")[2]
         col_line = linecache.getline(file,7)
         col_line_lst = col_line.strip('\n').split('\t')
         col_line_lst.append("SampleID")
@@ -52,8 +55,8 @@ def lineplot(rundir_path,tumor_normal_csv):
     df_final = hsmetrics_summary(rundir_path)
     df_final_select_cols_for_plot = df_final[["SampleID","PCT_TARGET_BASES_10X","PCT_TARGET_BASES_20X","PCT_TARGET_BASES_30X","PCT_TARGET_BASES_40X","PCT_TARGET_BASES_50X","PCT_TARGET_BASES_100X","PCT_TARGET_BASES_250X","PCT_TARGET_BASES_500X","PCT_TARGET_BASES_1000X"]]
     sample_tumor_normal = pd.read_csv(tumor_normal_csv)
-    tumor_samples = sample_tumor_normal['Tumor'].str.split("_",expand=True)[5].astype(str)
-    normal_samples = sample_tumor_normal['Normal'].str.split("_",expand=True)[5].astype(str)
+    tumor_samples = sample_tumor_normal['Tumor'].str.split("_",expand=True)[2].astype(str)
+    normal_samples = sample_tumor_normal['Normal'].str.split("_",expand=True)[2].astype(str)
 
     df_pct_normal = df_final_select_cols_for_plot[df_final_select_cols_for_plot.SampleID.isin(normal_samples)]
     df_pct_normal_sort = df_pct_normal.sort_values(by=['SampleID'])
@@ -82,7 +85,10 @@ def hsmetric_targetcoverage(rundir_path):
     for targcov_file in pertarget_files_list:
         filename = targcov_file.split("/")[-1]
         samplename = filename.split("_PerTargetCoverage.txt")[0]
-        samplename_final = samplename.split("_")[5]
+        if any(x in samplename for x in ["SC", "NTC", "NC"]):
+            samplename_final = samplename.split("_")[5]
+        else:
+            samplename_final = samplename.split("_")[2]
         process_data = pd.read_csv(targcov_file,sep="\t")
         process_data['SampleID'] = samplename_final
         process_readcount_filter = process_data[(process_data['read_count'] < 200)]

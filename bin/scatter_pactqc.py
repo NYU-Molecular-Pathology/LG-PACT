@@ -38,13 +38,13 @@ def annots_3callers(file):
 def plot_qc(somatic_allcaller_results,pactid,rundir):
     somatic_allcaller_results['QUAL_LoFreqSomatic'] = somatic_allcaller_results['QUAL_LoFreqSomatic'].apply(lambda x: math.sqrt(float(x)))
     p1_ggtitle = pactid+".A.3callers"
-    p1 = (ggplot(somatic_allcaller_results,aes(y="QUAL_Strelka", x="QUAL_MuTect2",size="QUAL_LoFreqSomatic",color='QUAL_LoFreqSomatic'))+geom_point()+facet_wrap('~Test_Number')+ggtitle(p1_ggtitle)+theme_bw()+labs(color="sqrt(QUAL.LFS)",size="sqrt(QUAL.LFS)"))
+    p1 = (ggplot(somatic_allcaller_results,aes(y="QUAL_Strelka", x="QUAL_MuTect2",size="QUAL_LoFreqSomatic",color='QUAL_LoFreqSomatic'))+geom_point()+facet_wrap('~TM_Number')+ggtitle(p1_ggtitle)+theme_bw()+labs(color="sqrt(QUAL.LFS)",size="sqrt(QUAL.LFS)"))
     g1 = pw.load_ggplot(p1, figsize=(15,10))
 
     somatic_allcaller_results['QUAL_Strelka'] = somatic_allcaller_results['QUAL_Strelka'].apply(lambda x: math.log2(x))
     somatic_allcaller_results['QUAL_MuTect2'] = somatic_allcaller_results['QUAL_MuTect2'].apply(lambda x: math.log2(x))
     p2_ggtitle = pactid+".B.3callers"
-    p2 = (ggplot(somatic_allcaller_results,aes(y="QUAL_Strelka", x="QUAL_MuTect2",size="QUAL_LoFreqSomatic",color='QUAL_LoFreqSomatic'))+geom_point()+facet_wrap('~Test_Number')+ggtitle(p2_ggtitle)+theme_bw()+labs(x="log2(QUAL_MuTect2)",y="log2(QUAL_Strelka)",color="sqrt(QUAL.LFS)",size="sqrt(QUAL.LFS)"))
+    p2 = (ggplot(somatic_allcaller_results,aes(y="QUAL_Strelka", x="QUAL_MuTect2",size="QUAL_LoFreqSomatic",color='QUAL_LoFreqSomatic'))+geom_point()+facet_wrap('~TM_Number')+ggtitle(p2_ggtitle)+theme_bw()+labs(x="log2(QUAL_MuTect2)",y="log2(QUAL_Strelka)",color="sqrt(QUAL.LFS)",size="sqrt(QUAL.LFS)"))
     g2 = pw.load_ggplot(p2, figsize=(15,10))
     g12 = (g1/g2)
     figure_title = "PACT QC "+ pactid
@@ -71,11 +71,11 @@ def main(**kwargs):
     demux_ss_find = find('demux-samplesheet.csv', maindir)
     demux_ss_file = pd.read_csv(demux_ss_find[0],skiprows=19)
     somatic_demux_merge = pd.merge(final_df,demux_ss_file,left_on="Sample",right_on="Sample_ID")
-    somatic_demux_merge_excludedHAPMAP = somatic_demux_merge.loc[(somatic_demux_merge['Test_Number'] != '0')]
-    variants_final = somatic_demux_merge_excludedHAPMAP[["Test_Number","VariantFinal" ,"QUAL_MuTect2", "AF_MuTect2","DP_MuTect2","Tumor_MuTect2",   "Normal_MuTect2","Func.refGene_MuTect2","ExonicFunc.refGene_MuTect2", "Gene.refGene_MuTect2","AAChange.refGene_MuTect2","QUAL_Strelka","AF_Strelka",  "DP_Strelka","Tumor_Strelka","Normal_Strelka","Func.refGene_Strelka","ExonicFunc.refGene_Strelka","Gene.refGene_Strelka","AAChange.refGene_Strelka","QUAL_LoFreqSomatic","AF_LoFreqSomatic","DP_LoFreqSomatic","Tumor_LoFreqSomatic","Normal_LoFreqSomatic","Func.refGene_LoFreqSomatic","ExonicFunc.refGene_LoFreqSomatic","Gene.refGene_LoFreqSomatic","AAChange.refGene_LoFreqSomatic","Sample","Sample_ID","Sample_Name","Paired_Normal","I7_Index_ID","index","Specimen_ID","EPIC_ID","Tumor_Content","Tumor_Type","Description","Run_Number","Sequencer_ID","Chip_ID","Sample_Project"]]
+    somatic_demux_merge_excludedHAPMAP = somatic_demux_merge.loc[(somatic_demux_merge['TM_Number'].notna())]
+    variants_final = somatic_demux_merge_excludedHAPMAP[["TM_Number","VariantFinal" ,"QUAL_MuTect2", "AF_MuTect2","DP_MuTect2","Tumor_MuTect2",   "Normal_MuTect2","Func.refGene_MuTect2","ExonicFunc.refGene_MuTect2", "Gene.refGene_MuTect2","AAChange.refGene_MuTect2","QUAL_Strelka","AF_Strelka",  "DP_Strelka","Tumor_Strelka","Normal_Strelka","Func.refGene_Strelka","ExonicFunc.refGene_Strelka","Gene.refGene_Strelka","AAChange.refGene_Strelka","QUAL_LoFreqSomatic","AF_LoFreqSomatic","DP_LoFreqSomatic","Tumor_LoFreqSomatic","Normal_LoFreqSomatic","Func.refGene_LoFreqSomatic","ExonicFunc.refGene_LoFreqSomatic","Gene.refGene_LoFreqSomatic","AAChange.refGene_LoFreqSomatic","Sample","Sample_ID","Paired_Normal","I7_Index_ID","index","Tumor_Content","Tumor_Type"]]
     output_path = rundir+"/clinical/"+"PACT.3callers.csv"
     variants_final.to_csv(output_path, index=False)
-    Pact_3callers = variants_final[['Test_Number','VariantFinal','QUAL_MuTect2','QUAL_Strelka','QUAL_LoFreqSomatic']]
+    Pact_3callers = variants_final[['TM_Number','VariantFinal','QUAL_MuTect2','QUAL_Strelka','QUAL_LoFreqSomatic']]
 
     ## plot the qual of 3 callers (based of xf) ##
     print("Generating QUAL figure and PACT 3 callers csv file!!")

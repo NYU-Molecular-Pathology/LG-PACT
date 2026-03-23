@@ -452,6 +452,8 @@ Channel.fromPath( file(SeraCareTruthSet)).into {seracare_truth_set; seracare_tru
 Channel.fromPath("/gpfs/data/molecpathlab/production/NGS607/",type: 'dir').set { ngs607_dir }
 Channel.fromPath("${CNVPool}").set { cnv_pool_ch }
 Channel.fromPath( file(samplesheet) ).set { samples_analysis_sheet }
+// vcf_qc_checker for copying files to NAS
+Channel.fromPath("/gpfs/data/molecpathlab/production/vcf_qc_checker/",type: 'dir').set { vcf_qc_checker_dir }
 
 // Channels for probe heatmap
 Channel.fromPath(file(genes_tsv)).set{ probe_genes_tsv }
@@ -2185,7 +2187,7 @@ samples_dd_ra_rc_bam2.combine(samples_pairs) // [ sampleID, sampleBam, sampleBai
                         def tumorID = item[0]
                         def tumorBam = item[1]
                         def tumorBai = item[2]
-                        def normalID = item[3]
+                        def normalID = item[3].split('_', 3)[2]
                         def sampleID = item[4]
                         def sampleBam = item[5]
                         def sampleBai = item[6]
@@ -2245,7 +2247,7 @@ samples_dd_bam3.combine(samples_pairs4) // [ sampleID, sampleBam, sampleBai, tum
         def tumorID = items[0]
         def tumorBam = items[1]
         def tumorBai = items[2]
-        def normalID = items[3]
+        def normalID = items[3].split('_', 3)[2]
         def sampleID = items[4]
         def sampleBam = items[5]
         def sampleBai = items[6]
@@ -3828,7 +3830,7 @@ process callable_loci_table {
 
 callable_locations.collectFile(name: "${callable_loci_file}", storeDir: "${params.outputDir}")
 .into { sample_loci_collected; sample_loci_collected2}
-Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3; demux_sample_sheet4 }
+Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_sample_sheet2; demux_sample_sheet3; demux_sample_sheet4; demux_sample_sheet5 }
 Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2; sample_Tumor_Normal_sheet3 }
 
 
@@ -3969,9 +3971,9 @@ samples_bam3.combine(samples_pairs2) // [ sampleID, sampleBam, tumorID, normalID
                         normalID == sampleID
                     }
                     .map {tumorID, tumorBam, normalID, sampleID, sampleBam  -> // re arrange the elements
-                        def normalBam = sampleBam
-                        def comparisonID = "${tumorID}_${normalID}"
-                        return [ comparisonID, tumorID, tumorBam, normalID, normalBam ]
+                        def normalID_parsed = normalID.split('_', 3)[2]
+                        def comparisonID = "${tumorID}_${normalID_parsed}"
+                        return [ comparisonID, tumorID, tumorBam, normalID_parsed, normalBam ]
                     }//.subscribe { println "[samples_bam3]${it}"}
                     .tap { samples_pairs_bam_ch }
                     .combine(ref_fasta13) // add reference genome and targets
@@ -5036,8 +5038,13 @@ process run_qc {
     output:
     val('done') into done_runqc
     file('msi_validation.tsv') into msi_file
-    file('run_qc.tsv') into run_qc_file
+    // sample qc
+    file('run_qc.tsv') into (run_qc_file, run_qc_file2)
     file('hsmetrics-report.html') into hsmetrics_file
+    // controls qc
+    file('controls_qc.tsv') into controls_qc_file
+    file('hsmetrics_summary.csv') into hsmetrics_summary_file
+    file('conpair_summary.csv') into conpair_summary_file
 
     script:
     """
@@ -5050,6 +5057,7 @@ process run_qc {
     # generate Run QC
     generate_html_report.py -o "${PWD}/" -p "\${pactid}" -r "\${runid}" -s ${seracare_selected_variants_dist}
     cp "${PWD}/\${pactid}-QC.tsv" run_qc.tsv
+    cp "${PWD}/\${pactid}-RunQC.tsv" controls_qc.tsv
 
     # SeraCare QC 
     seracare_af_qc.py -rid "\${runid}" -rdir "${PWD}/output" -sct ${sc_truth_set} -ngsdir ${ngs607dir}
@@ -5063,6 +5071,7 @@ process run_qc {
     # CollectHsmetric qc
     hsmetrics_summary.py -rdir "${PWD}/" -tnss ${sampleTumorNormalCsv}
     cp "${PWD}/output/clinical/hsmetrics-report.html" hsmetrics-report.html
+    cp "${PWD}/output/clinical/hsmetrics_summary.csv" hsmetrics_summary.csv
 
     # CollectInsertSizeMetric qc
     insertsizemetrics_summary.py -rdir "${PWD}/"
@@ -5073,6 +5082,7 @@ process run_qc {
 
     # Conpair summary
     conpair_summary.py -rdir "${PWD}/"
+    cp "${PWD}/output/clinical/conpair_summary.csv" conpair_summary.csv
 
     # Hotspot qc
     detect_hotspots.py -rid "\${runid}" -pactid "\${pactid}" -rdir "${PWD}/"
@@ -5095,6 +5105,7 @@ process save_exome_cvg {
     file("*_Tumor_PerTargetCoverage_200.csv")
     file("*_normals_percentages_200.csv")
     file("*_tumors_percentages_200.csv")
+    val('exome_cvg') into done_exome_cvg
 
     script:
     """
@@ -5157,6 +5168,69 @@ process batch_add_qc_hsmetrics {
         --pairing-file "${sampleTumorNormalCsv}" \
         --vcf-dir "${PWD}/output/variants/vcf_processing/vcf_msi_tmb" \
         --output-dir "sophia_vcf_final" 
+    """
+}
+
+process vcf_qc_checker {
+    // Check the final VCF files for the added headers and QC metrics
+    publishDir "${params.outputDir}/vcf_qc_final", mode: 'copy'
+    
+    input:
+    val(qc_all) from done_qc.collect()
+    file(final_vcf) from final_vcfs
+    file(sample_qc_tsv) from run_qc_file2
+    file(controls_qc_tsv) from controls_qc_file
+    file(demux_ss) from demux_sample_sheet5
+    file(hsmetrics_summary_csv) from hsmetrics_summary_file
+    file(conpair_summary_csv) from conpair_summary_file
+    val('exome_cvg') from done_exome_cvg
+    file(vcf_qc_checker_dir) from vcf_qc_checker_dir
+
+    output:
+    file('*.csv') into vcf_qc_checker_output
+    val('vcf_qc_checker') into done_vcf_qc_checker
+    
+    script:
+    """
+    pact_id="\$(cat ${demux_ss} | sed -n '4p' | awk -F ',' '{print \$2}')" 
+    run_id="\$(echo ${PWD} | tr '/' '\n' | tail -n 1)"
+
+    vcf_qc_checker.py \
+        --runqc "${controls_qc_tsv}" \
+        --qc "${sample_qc_tsv}" \
+        --demux "${demux_ss}" \
+        --hsmetrics "${hsmetrics_summary_csv}" \
+        --conpair "${conpair_summary_csv}" \
+        --exome-tumor "${PWD}/output/Exome_Cvg/\${pact_id}_tumors_percentages_200.csv" \
+        --exome-normal "${PWD}/output/Exome_Cvg/\${pact_id}_normals_percentages_200.csv" \
+        --runid "\${run_id}" \
+        --merge \
+        --organize-vcfs \
+        --vcf-dir "${PWD}/output/sophia_vcf_final" \
+        --pass-dir "${vcf_qc_checker_dir}/pass" \
+        --pending-dir "${vcf_qc_checker_dir}/pending"
+
+    """
+}
+
+process qc_to_mysql_upload {
+    // Upload QC metrics to MySQL database
+    publishDir "${params.outputDir}/qc_mysql_upload", mode: 'copy'
+    
+    input:
+    val('vcf_qc_checker') from done_vcf_qc_checker
+
+    output:
+    file('*_parsed.csv') into mysql_upload_files
+
+    script:
+    """
+    # Parse the controls QC CSV files and upload to MySQL
+    control_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/controls_qc.csv"
+
+    #Parse the sample QC CSV files and upload to MySQL
+    combined_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/combined_qc.csv"
+
     """
 }
 

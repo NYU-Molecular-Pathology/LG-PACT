@@ -13,7 +13,10 @@ def insertmetrics_summary(rundir_path):
     ##loop through each file, get sample name, line 7,8 ##
     all_dfs = []
     for file in insertmetrics_files_list:
-        sampleID = file.split("/")[-1].split("_insert_size_metrics.txt")[0].split("_")[5]
+        if any(x in file for x in ["SC", "NTC", "NC"]):
+            sampleID = file.split("/")[-1].split("_insert_size_metrics.txt")[0].split("_")[5]
+        else:
+            sampleID = file.split("/")[-1].split("_insert_size_metrics.txt")[0].split("_")[2]
         col_line = linecache.getline(file,7)
         col_line_lst = col_line.strip('\n').split('\t')
         col_line_lst.append("SampleID")

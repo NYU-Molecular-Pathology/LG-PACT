@@ -35,28 +35,36 @@ def find(pattern, path):
 
 def get_PACT_ID(demux_samplesheet_path):
     """get the previous run's PACT ID and run ID"""
-    # Read the demux file
     try:
         with open(demux_samplesheet_path, 'r') as file:
             lines = file.readlines()
-        # Find the row index where "[Data]" appears
+        # Parse PACT_ID from "Project Name" in [Header] section
+        PACT_ID = None
+        for line in lines:
+            if line.startswith("[Reads]"):
+                break
+            if line.strip().startswith("Project Name,"):
+                PACT_ID = line.strip().split(",")[1].strip()
+                break
+        # Find the row index where "[Data]" appears and read the Data table
         start_index = None
         for i, line in enumerate(lines):
             if line.startswith("[Data]"):
                 start_index = i + 1
                 break
-        # "[Data]" row is found, read the CSV from the next row
         if start_index is not None:
             demux_data = pd.read_csv(demux_samplesheet_path, skiprows=start_index)
         else:
             print("No '[Data]' row found in the file.")
+            return
+        if PACT_ID is None:
+            print("No 'Project Name' found in [Header] section.")
+            return
+        Run_Number = demux_data['Run_Number'].unique()[0]
+        return Run_Number, PACT_ID
     except FileNotFoundError:
         print(f"File {demux_samplesheet_path} not found.")
         return
-       
-    PACT_ID = demux_data['Sample_Project'].unique()[0]
-    Run_Number = demux_data['Run_Number'].unique()[0]
-    return Run_Number, PACT_ID
 
 def transform_filename(sample, runID, PACT_ID):
     """ Transform the sample filename for the boxplot """

@@ -12,9 +12,10 @@ def read_samplesheet(samplesheet_path):
     samplesheet = pd.read_csv(samplesheet_path, skiprows=19)
     samplesheet_paired = samplesheet.dropna()
     samplesheet_filtered = samplesheet_paired[
-        ~samplesheet_paired['Sample_Name'].str.contains("SC_SERACARE|NC_HAPMAP|NTC_H20")
+        ~samplesheet_paired['Sample_ID'].str.contains("SC_SERACARE|NC_HAPMAP|NTC_H20")
     ]
-    samplesheet_filtered['Sample_pairs'] = samplesheet_filtered["Sample_Name"] + "_" + samplesheet_filtered["Paired_Normal"]
+    samplesheet_filtered["Paired_Normal"] = samplesheet_filtered["Paired_Normal"].str.split("_",n=2).str[2]
+    samplesheet_filtered['Sample_pairs'] = samplesheet_filtered["Sample_ID"] + "_" + samplesheet_filtered["Paired_Normal"]
     return samplesheet_filtered
 
 def get_msi_data(sample_list, run_dir):

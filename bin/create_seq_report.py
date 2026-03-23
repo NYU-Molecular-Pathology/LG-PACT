@@ -232,7 +232,7 @@ class seq_qc_report:
         pos_control_variants.insert(0, 'Row', (pos_control_variants.reset_index().index+1).astype(str))
         #rename sample
         run_QC_df["Sample"] = run_QC_df["Sample"].str.split("_", n=5, expand = True)[5]
-        seq_QC_df["Sample"] = seq_QC_df["Sample"].str.split("_", n=5, expand = True)[5]
+        seq_QC_df["Sample"] = seq_QC_df["Sample"].str.split("_", n=2, expand = True)[2] # Change to accommodate new sample name format for SG
         seq_QC_df.to_csv(os.path.join(doc_root,'%s-QC.tsv'%self.args.project), sep="\t", index = False)
         run_QC_df.to_csv(os.path.join(doc_root,'%s-RunQC.tsv'%self.args.project), sep="\t", index = False)
 

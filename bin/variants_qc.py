@@ -22,8 +22,8 @@ def find(pattern, path):
     return file_path
 
 def sample_name(annotation_file,column):
-    TS_number = annotation_file[column].str.split('_', expand=True,n=5)
-    return TS_number[5]
+    TS_number = annotation_file[column].str.split('_', expand=True,n=2)
+    return TS_number[2]
  
 def file_processing(annotations_paired_file):
     annotations_paired_file = annotations_paired_file.drop(columns=['NORMAL.DP','TUMOR.DP','TUMOR.AF','TUMOR.AD.REF','TUMOR.AD.ALT','TUMOR.AD.TOTAL','NORMAL.AD.REF','NORMAL.AD.ALT','NORMAL.AD.TOTAL','Run','Time','Session','Workflow','Location','System','GitBranch','GitTag'],axis = 1)
@@ -101,11 +101,11 @@ def main(runid,rundir,pactid):
     demux_ss_find = find('demux-samplesheet.csv', maindir)
     demux_ss_file = pd.read_csv(demux_ss_find[0],skiprows=19)
     somatic_demux_merge = pd.merge(somatic_variants,demux_ss_file,left_on="Tumor",right_on="Sample_ID")
-    somatic_demux_merge_excludedHAPMAP = somatic_demux_merge.loc[(somatic_demux_merge['Test_Number'] != '0')]
+    somatic_demux_merge_excludedHAPMAP = somatic_demux_merge.loc[(somatic_demux_merge['TM_Number'].notna())]
     somatic_demux_merge_final = somatic_demux_merge_excludedHAPMAP.copy()
     somatic_demux_merge_final['Tumor'] = sample_name(somatic_demux_merge_final,'Tumor')
-    somatic_demux_merge_final['Normal'] = sample_name(somatic_demux_merge_final,'Normal')
-    somatic_variants_final = somatic_demux_merge_final[['Test_Number','Tumor','Normal','Gene.refGene','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','AAChange.refGene','Variant','DP','AF','Func.refGene','NORMAL.AF']]
+    #somatic_demux_merge_final['Normal'] = sample_name(somatic_demux_merge_final,'Normal')
+    somatic_variants_final = somatic_demux_merge_final[['TM_Number','Tumor','Normal','Gene.refGene','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','AAChange.refGene','Variant','DP','AF','Func.refGene','NORMAL.AF']]
     
     ## find per caller annotations to add cosmic info to report ##
     files_to_find = ['annotations.MuTect2.tsv', 'annotations.Strelka.tsv', 'annotations.LoFreqSomatic.tsv']
@@ -118,11 +118,11 @@ def main(runid,rundir,pactid):
     cosmic_somatic_merge['COSMIC_Count'] = cosmic_somatic_merge['COSMIC_Count'].astype(str).replace('0','None')
     cosmic_somatic_merge['CosmicID'] = cosmic_somatic_merge['CosmicID'].replace(0,'None')
     ## Get the required cols for final report ##
-    somatic_cosmic_variants = cosmic_somatic_merge[['Test_Number','Tumor','Normal','Gene.refGene','Variant','DP','AF','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','CosmicID','COSMIC_Count','AAChange.refGene','Func.refGene','NORMAL.AF']]
+    somatic_cosmic_variants = cosmic_somatic_merge[['TM_Number','Tumor','Normal','Gene.refGene','Variant','DP','AF','MuTect2','Strelka','LoFreqSomatic','ExonicFunc.refGene','CosmicID','COSMIC_Count','AAChange.refGene','Func.refGene','NORMAL.AF']]
     somatic_file_out = '%s/%s/%s'% (rundir,"clinical","somatic_variants.csv")
     somatic_cosmic_variants.to_csv(somatic_file_out, index=False)
 
-    somatic_variants_samples = somatic_variants_final.Test_Number.unique()
+    somatic_variants_samples = somatic_variants_final.TM_Number.unique()
 
     ## 2. Process germline variants ##
     lofreq_annotation_file_find = find('annotations.LoFreq.tsv', rundir)
