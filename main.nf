@@ -3972,6 +3972,7 @@ samples_bam3.combine(samples_pairs2) // [ sampleID, sampleBam, tumorID, normalID
                     }
                     .map {tumorID, tumorBam, normalID, sampleID, sampleBam  -> // re arrange the elements
                         def normalID_parsed = normalID.split('_', 3)[2]
+                        def normalBam = sampleBam
                         def comparisonID = "${tumorID}_${normalID_parsed}"
                         return [ comparisonID, tumorID, tumorBam, normalID_parsed, normalBam ]
                     }//.subscribe { println "[samples_bam3]${it}"}
