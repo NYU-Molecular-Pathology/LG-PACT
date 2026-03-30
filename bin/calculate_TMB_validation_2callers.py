@@ -75,10 +75,10 @@ def filter_demux_data(demux_ss_df):
     """
     # Drop rows with missing values
     demux_ss_data = demux_ss_df.dropna()
-    # Exclude control samples based on their Sample_Name column values
-    demux_ss_data_final = demux_ss_data[~demux_ss_data['Sample_Name'].str.contains("SC_SERACARE|NC_HAPMAP|NTC_H20")]
-    # Create a dictionary mapping Sample_Name to Tumor_Type
-    demux_ss_dict = dict(zip(demux_ss_data_final.Sample_Name, demux_ss_data_final.Tumor_Type))
+    # Exclude control samples based on their Sample_ID column values
+    demux_ss_data_final = demux_ss_data[~demux_ss_data['Sample_ID'].str.contains("SC_SERACARE|NC_HAPMAP|NTC_H20")]
+    # Create a dictionary mapping Sample_ID to Tumor_Type
+    demux_ss_dict = dict(zip(demux_ss_data_final.Sample_ID, demux_ss_data_final.Tumor_Type))
     return demux_ss_data_final, demux_ss_dict
 
 def compute_variant_counts(samples, annot_df, output_dir):
@@ -205,7 +205,7 @@ def main():
     annot_Mutect_LoFreq_nocontrols = filter_annotation_data(annot_paired_df)
     # Get sample and tumor type list
     demux_ss_data_final, demux_ss_dict = filter_demux_data(demux_ss_df)
-    samples = demux_ss_data_final.Sample_Name.unique()
+    samples = demux_ss_data_final.Sample_ID.unique()
     # Get variant count for each sample after applying filters
     sample_nvariants_dict = compute_variant_counts(samples, annot_Mutect_LoFreq_nocontrols, args.variant_annotation_output)
     # Load the callable loci data
