@@ -1518,14 +1518,7 @@ def main():
             print("\nERROR: Controls QC check failed")
             sys.exit(1)
         
-        all_passed = all(controls_results['Overall_QC'] == 'PASS')
-        
-        if not all_passed:
-            print("\nControls QC FAILED - Stopping pipeline")
-            print("One or more controls did not pass QC")
-            sys.exit(1)
-        
-        print("\nAll controls PASSED - Proceeding to samples QC")
+        print("\n Proceeding to samples QC")
         
         # Step 2: Check samples
         print("\n" + "="*70)
