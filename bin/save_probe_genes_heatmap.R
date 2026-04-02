@@ -2,9 +2,10 @@
 ## Script name: save_probe_genes_heatmap.R
 ## Purpose: source of global scripts and generate output files
 ## Date Created: October 1, 2024
-## Version: 1.0.0
+## Date Modified: April 2, 2026
+## Version: 1.0.1
 ## Author: Jonathan Serrano
-## Copyright (c) NYULH Jonathan Serrano, 2024
+## Copyright (c) NYULH Jonathan Serrano, 2026
 
 # Get the command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -16,11 +17,20 @@ TSV_PATH <- args[3]
 METRICS_DIR <- args[4]
 PDF_OUT <- args[5]
 
+# Input paths -----------------
+# PROD_DIR <- "/gpfs/data/molecpathlab/production/NGS607"
+# METRICS_DIR <- file.path(PROD_DIR, RUN_ID, "output", "CollectHsMetrics")
+# TSV_PATH <- file.path(PROD_DIR, RUN_ID, "data", "probe_genes_heatmap_list.tsv")
+
+# Output file -----------------
+# pdf_name <- paste(PACT_ID, RUN_ID, "Mean_Coverage_probe_hm.pdf", sep = "_")
+# PDF_OUT <- file.path(PROD_DIR, RUN_ID, pdf_name)
+
 # Print the input arguments for confirmation
-message("RUN_ID:", RUN_ID)
-message("PACT_ID:", PACT_ID)
-message("TSV_PATH:", TSV_PATH, "\n")
-message("METRICS_DIR:", METRICS_DIR, "\n")
+message("RUN_ID: ", RUN_ID)
+message("PACT_ID: ", PACT_ID)
+message("TSV_PATH: ", TSV_PATH, "\n")
+message("METRICS_DIR: ", METRICS_DIR, "\n")
 
 
 # Load necessary libraries ----------------------------------------------------
@@ -98,7 +108,7 @@ draw_heatmap_page <- function(gene_matrix, hm_title, df_gene) {
         col = hm_color,
         name = "Mean Coverage",
         show_row_names = FALSE,
-        column_names_gp = gpar(fontsize = 10),
+        column_names_gp = gpar(fontsize = 8),
         row_names_gp = gpar(fontsize = 10),
         cluster_columns = FALSE,
         cluster_rows = FALSE,
@@ -117,12 +127,12 @@ draw_heatmap_page <- function(gene_matrix, hm_title, df_gene) {
 
 
 # Function to save heatmaps by gene -------------------------------------------
-save_heatmap_by_gene <- function(coverage_df, pdf_output, PACT_ID) {
+save_heatmap_by_gene <- function(coverage_df, PDF_OUT, PACT_ID) {
     gene_chunks <- get_gene_chunks(coverage_df)
     hm_title <- paste(PACT_ID, "HS Metrics Select Gene Probe Mean Coverage")
 
-    message("Saving PDF: ", pdf_output)
-    pdf(pdf_output, width = 16, height = 8)
+    message("Saving PDF: ", PDF_OUT)
+    pdf(PDF_OUT, width = 16, height = 8)
 
     for (genes in gene_chunks) {
         df_gene <- coverage_df[coverage_df$gene %in% genes, ]
@@ -143,9 +153,9 @@ generate_run_heatmaps <- function(PACT_ID, RUN_ID, TSV_PATH, PDF_OUT) {
                               header = F, stringsAsFactors = F)[[1]]
     message(paste("Running:", PACT_ID, RUN_ID))
     coverage_df <- get_coverage_data(input_genes)
-    pdf_output <- PDF_OUT
-    #pdf_output <- paste(PACT_ID, RUN_ID, "Mean_Coverage_probe_hm.pdf", sep = "_")
-    save_heatmap_by_gene(coverage_df, pdf_output, PACT_ID)
+    PDF_OUT <- PDF_OUT
+    colnames(coverage_df) <- stringr::str_remove_all(colnames(coverage_df), pattern = "_SERACARE")
+    save_heatmap_by_gene(coverage_df, PDF_OUT, PACT_ID)
     message("Heatmap Generation Complete!")
 }
 
