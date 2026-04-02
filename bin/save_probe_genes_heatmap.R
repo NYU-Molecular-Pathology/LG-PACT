@@ -16,11 +16,15 @@ TSV_PATH <- args[3]
 METRICS_DIR <- args[4]
 PDF_OUT <- args[5]
 
+# PROD_DIR <- "/gpfs/data/molecpathlab/production/NGS607"
+# METRICS_DIR <- file.path(PROD_DIR, RUN_ID, "output", "CollectHsMetrics")
+# TSV_PATH <- file.path(PROD_DIR, RUN_ID, "/data/probe_genes_heatmap_list.tsv")
+
 # Print the input arguments for confirmation
-message("RUN_ID:", RUN_ID)
-message("PACT_ID:", PACT_ID)
-message("TSV_PATH:", TSV_PATH, "\n")
-message("METRICS_DIR:", METRICS_DIR, "\n")
+message("RUN_ID: ", RUN_ID)
+message("PACT_ID: ", PACT_ID)
+message("TSV_PATH: ", TSV_PATH, "\n")
+message("METRICS_DIR: ", METRICS_DIR, "\n")
 
 
 # Load necessary libraries ----------------------------------------------------
@@ -115,7 +119,6 @@ draw_heatmap_page <- function(gene_matrix, hm_title, df_gene) {
     return(ComplexHeatmap::draw(hm, padding = unit(c(10, 10, 10, 10), "mm")))
 }
 
-
 # Function to save heatmaps by gene -------------------------------------------
 save_heatmap_by_gene <- function(coverage_df, pdf_output, PACT_ID) {
     gene_chunks <- get_gene_chunks(coverage_df)
@@ -144,7 +147,7 @@ generate_run_heatmaps <- function(PACT_ID, RUN_ID, TSV_PATH, PDF_OUT) {
     message(paste("Running:", PACT_ID, RUN_ID))
     coverage_df <- get_coverage_data(input_genes)
     pdf_output <- PDF_OUT
-    #pdf_output <- paste(PACT_ID, RUN_ID, "Mean_Coverage_probe_hm.pdf", sep = "_")
+    # pdf_output <- file.path(PROD_DIR, paste(PACT_ID, RUN_ID, "Mean_Coverage_probe_hm.pdf", sep = "_"))
     save_heatmap_by_gene(coverage_df, pdf_output, PACT_ID)
     message("Heatmap Generation Complete!")
 }
