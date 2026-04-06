@@ -30,7 +30,7 @@ def process_pileup_file(file_path):
         # Calculate the REF ratio if read depth > 50; else assign NaN
         data["Ratio"] = data.apply(lambda row: row[3].count(row["REF"]) / len(row[3]) 
                                 if isinstance(row[3], str) and len(row[3]) > 50 else np.nan, axis=1)
-
+    
         # Return DataFrame with POS, REF, and calculated ratio
     return data[["POS", "REF", "Ratio"]]
 
@@ -40,9 +40,9 @@ def merge_dataframes(dir_path,marker_bedfile):
     marker_df = pd.read_csv(marker_bedfile, sep="\t", header=None)
     marker_df["POS"] = marker_df[0].astype(str) + ":" + marker_df[2].astype(str)
     markers = marker_df[["POS"]]
-
+    
     final_df = pd.DataFrame()
-
+    
     # Walk through directory and process .pileup files
     for root, dirs, files in os.walk(dir_path):
         for file in files:
@@ -52,19 +52,13 @@ def merge_dataframes(dir_path,marker_bedfile):
                 if data.empty:
                     continue
                 else:
-                    #data.rename(columns={"Ratio": os.path.splitext(file)[0]}, inplace=True)
-                    raw_name = os.path.splitext(file)[0]
-                    if "_" in raw_name:
-                        new_name = raw_name.split("_", 1)[1]
-                    else:
-                        new_name = raw_name
-                    data.rename(columns={"Ratio": new_name}, inplace=True)
+                    data.rename(columns={"Ratio": os.path.splitext(file)[0]}, inplace=True)
                     # Merge processed data
                     if final_df.empty:
                         final_df = data
                     else:
                         final_df = pd.merge(final_df, data, on=["POS", "REF"], how='outer')
-
+    
     # Merge with marker positions to ensure all positions are retained
     final_df = pd.merge(markers, final_df, on=["POS"], how="outer")
     return final_df
@@ -113,7 +107,7 @@ def create_correlation_matrix_heatmap(marker_ratio_df, runid, rundir):
                     same_measure_count = np.sum(valid_comparison)
                     total_positions = marker_ratio_df.shape[0] - np.sum(either_nan)
                     correlation_matrix[i][j] = (same_measure_count / total_positions if total_positions > 0 else np.nan)
-
+    
     correlation_df = pd.DataFrame(correlation_matrix, columns=marker_ratio_df.columns, index=marker_ratio_df.columns)
     correlation_df_percent = correlation_df * 100
     
