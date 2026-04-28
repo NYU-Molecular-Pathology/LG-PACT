@@ -17,11 +17,13 @@ def parse_contamination(rundir_path):
             tumor = None
             for line in lines:
                 if "Normal sample contamination level" in line:
-                    val_normal = float(line.split(":")[1].strip().replace('%', ''))
-                    normal = "<0.1" if val_normal < 0.1 else val_normal
+                    raw = line.split(":")[1].strip().replace('%', '')
+                    normal = "CoverageTooLow" if raw == "CoverageTooLow" else (
+                        "<0.1" if float(raw) < 0.1 else float(raw))
                 elif "Tumor sample contamination level" in line:
-                    val_tumor = float(line.split(":")[1].strip().replace('%', ''))
-                    tumor = "<0.1" if val_tumor < 0.1 else val_tumor
+                    raw = line.split(":")[1].strip().replace('%', '')
+                    tumor = "CoverageTooLow" if raw == "CoverageTooLow" else (
+                        "<0.1" if float(raw) < 0.1 else float(raw))
         contamination_df.append([sampleID, normal, tumor])
     return pd.DataFrame(contamination_df, columns=["SampleID", "Normal_contamination", "Tumor_contamination"])
 
@@ -37,7 +39,8 @@ def parse_concordance(rundir_path):
             concordance = None
             for line in lines:
                 if "Concordance" in line:
-                    concordance = float(line.split(":")[1].strip().replace('%', ''))
+                    raw = line.split(":")[1].strip().replace('%', '')
+                    concordance = "CoverageTooLow" if raw == "CoverageTooLow" else float(raw)
         concordance_df.append([sampleID, concordance])
     return pd.DataFrame(concordance_df, columns=["SampleID", "Conpair_Concordance"])
 

@@ -2371,11 +2371,25 @@ process conpair_pileup_concordance {
     run_gatk_pileup_for_sample.py -B "${tumorBam}" -O "${tumor_pileup}" -R "${ref_fasta}" -M "${conpair_markerbed_file}"
     run_gatk_pileup_for_sample.py -B "${normalBam}" -O "${normal_pileup}" -R "${ref_fasta}" -M "${conpair_markerbed_file}"
 
-    # calculate concordance between two tumor and normal pairs #
-    verify_concordance.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${concordance_txt}" -M "${conpair_markertxt_file}" -C 50
+    # median coverage gate (same logic as main.sh); PASS => run Conpair scripts
+    if assess_pileup_coverage.sh -T "${tumor_pileup}" -N "${normal_pileup}" -m 50; then
+        # calculate concordance between two tumor and normal pairs #
+        verify_concordance.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${concordance_txt}" -M "${conpair_markertxt_file}" -C 50
 
-    # estimate contaminaton level for tumor and normal
-    estimate_tumor_normal_contamination.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${contamination_txt}" -M "${conpair_markertxt_file}"
+        # estimate contaminaton level for tumor and normal
+        estimate_tumor_normal_contamination.py -T "${tumor_pileup}" -N "${normal_pileup}" --outfile "${contamination_txt}" -M "${conpair_markertxt_file}"
+    else
+        cat >"${concordance_txt}" <<'EOF'
+Concordance: CoverageTooLow
+Based on 0/1136 markers (coverage per marker threshold : 50 reads)
+Minimum mapping quality: 10
+Minimum base quality: 20
+EOF
+        cat >"${contamination_txt}" <<'EOF'
+Normal sample contamination level: CoverageTooLow
+Tumor sample contamination level: CoverageTooLow
+EOF
+    fi
 
     """
 }
@@ -4168,7 +4182,7 @@ process cnvkit_cnv_to_vcf {
     script:
     output_vcf = "${comparisonID}.vcf"
     """
-    cnvkit.py export vcf "${final_cns}" -o "${output_vcf}"
+    cnvkit.py export vcf --sex "Female" "${final_cns}" -o "${output_vcf}"
     """
 }
 
