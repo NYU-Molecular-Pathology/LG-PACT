@@ -95,8 +95,10 @@ def extract_sample_id(full_name):
 
 def extract_base_id(sample_id):
     """Extract base ID from sample ID (without block number)."""
-    match = re.match(BASE_ID_PATTERN, sample_id)
-    return match.group(1) if match else sample_id
+    # match = re.match(BASE_ID_PATTERN, sample_id)
+    # return match.group(1) if match else sample_id
+    result = re.split(r"_", sample_id)[0]
+    return result if result else sample_id
 
 
 def parse_qc_value(value_str):
