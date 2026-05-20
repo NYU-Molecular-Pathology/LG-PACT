@@ -4182,7 +4182,7 @@ process cnvkit_cnv_to_vcf {
     script:
     output_vcf = "${comparisonID}.vcf"
     """
-    cnvkit.py export vcf --sex "Female" "${final_cns}" -o "${output_vcf}"
+    cnvkit.py export vcf "${final_cns}" --sample-sex female -o "${output_vcf}"
     """
 }
 
