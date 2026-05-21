@@ -377,8 +377,17 @@ $(SUBSCRIPT):
 .PHONY: $(SUBSCRIPT)
 
 # submit on Big Purple using SLURM
-submit-bigpurple: $(SUBSCRIPT)
-	@sbatch $(SUBSCRIPT) | tee >(sed 's|[^[:digit:]]*\([[:digit:]]*\).*|\1|' > '$(NXF_JOBFILE)')
+# submit-bigpurple: $(SUBSCRIPT)
+# 	@sbatch $(SUBSCRIPT) | tee >(sed 's|[^[:digit:]]*\([[:digit:]]*\).*|\1|' > '$(NXF_JOBFILE)')
+
+BAF_SCRIPT:=/gpfs/data/molecpathlab/development/post_pact_qc_workflow/baf_nf_sbatch.sh
+
+submit-bigpurple:
+	@touch "$(NXF_SUBMIT)" && \
+	FIRST=$$(sbatch --parsable -D "$(ABSDIR)" -o "$(SUBLOG)" -J "$(SUBJOBNAME)" -p "$(SUBQ)" $(SUBTIME) --ntasks-per-node=1 -c "$(SUBTHREADS)" --mem=$(SUBMEM) --export=HOSTNAME --wrap='bash -c "make submit-bigpurple-run TIMESTAMP=$(TIMESTAMP) $(SUBEP)"') && \
+	printf ">>> Submitted primary job: %s\n%s\n" "$${FIRST}" "$${FIRST}" > '$(NXF_JOBFILE)' && \
+	SECOND=$$(sbatch --parsable --dependency=afterok:$${FIRST} "$(BAF_SCRIPT)" "$(DIRNAME)") && \
+	echo ">>> Submitted BAF/CNV post-processing job: $${SECOND} (depends on $${FIRST})"
 
 # run inside a SLURM sbatch
 # store old pid and node entries in a backup file in case things get messy
