@@ -3848,24 +3848,24 @@ Channel.fromPath( file(demuxSamplesheet) ).into { demux_sample_sheet; demux_samp
 Channel.fromPath( file(sampleTumorNormalCsv) ).into { sample_Tumor_Normal_sheet; sample_Tumor_Normal_sheet2; sample_Tumor_Normal_sheet3 }
 
 
-process caller_variants_tmb_validation {
-    publishDir "${params.outputDir}/", mode: 'copy'
+// process caller_variants_tmb_validation {
+//     publishDir "${params.outputDir}/", mode: 'copy'
 
-    input:
-    file(anno_tsv) from anno_tab_by_caller2
-    file(sample_loci) from sample_loci_collected2
-    file(sample_sheet) from demux_sample_sheet3
+//     input:
+//     file(anno_tsv) from anno_tab_by_caller2
+//     file(sample_loci) from sample_loci_collected2
+//     file(sample_sheet) from demux_sample_sheet3
 
-    output:
-    file("${tmb_tsv}")
+//     output:
+//     file("${tmb_tsv}")
 
-    script:
-    //annotations.MuTect2.tsv
-    tmb_tsv = "annotations.paired.tmb.validation.tsv"
-    """
-    calculate_TMB_validation.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
-    """
-}
+//     script:
+//     //annotations.MuTect2.tsv
+//     tmb_tsv = "annotations.paired.tmb.validation.tsv"
+//     """
+//     calculate_TMB_validation.py -l "${sample_loci}" -i "${anno_tsv}" -o "${tmb_tsv}" -s "${sample_sheet}"
+//     """
+// }
 
 process caller_variants_tmb_validation_2callers {
     publishDir "${params.outputDir}/", mode: 'copy'

@@ -4,17 +4,17 @@ import os
 import argparse
 import fnmatch
 import numpy as np
-from plotnine import *
+import plotnine as p9
 from plotnine.data import *
 import patchworklib as pw
 
 '''
 Inputs:
-inputfile - "annotations.seracare.tsv"
-dir_NGS607 - path to NGS607 dir
-sc-truthset - "SeraSeq-Truth.txt"
-runID - RunID
-rundir - Run output dir path
+    inputfile -   "annotations.seracare.tsv"
+    dir_NGS607 -  path to NGS607 dir
+    sc-truthset - "SeraSeq-Truth.txt"
+    runID -       RunID
+    rundir -      Run output dir path
 
 Outputs:
 seracare_AF_QC_table.csv - VAF table for current run
@@ -22,6 +22,8 @@ seracare_AF_past_5_runs.csv - VAF table for past 5 runs
 sc_AF_past_5_runs.png - Boxplot VAF distribution for current and past 5 runs
 
 '''
+
+# pylint: disable=C0103
 
 def find(pattern, path):
     exclude_directories = set(['work'])
@@ -84,8 +86,8 @@ def determine_result(row):
         return "Above range"
     else:
         return "Within Range"
-    
-    
+
+
 def process_run(seracare_annotation_file, sc_truthset):
     # Step 1: Read the TSV file
     sc_annot_data = pd.read_csv(seracare_annotation_file[0], sep='\t')
@@ -105,7 +107,7 @@ def process_run(seracare_annotation_file, sc_truthset):
         combine_SCtruth_SCannot=pd.concat([combine_SCtruth_SCannot, sample_table])
     #combine_SCtruth_SCannot['Detected_AF'].fillna(0,inplace=True) # replace NA with 0
     combine_SCtruth_SCannot['Results'] = combine_SCtruth_SCannot.apply(determine_result, axis=1)
-    return(combine_SCtruth_SCannot)
+    return combine_SCtruth_SCannot
 
 def get_directories(path):
     """Get a list of directory names in the given path."""
@@ -123,16 +125,18 @@ def get_previous_directories(directories, target_dir):
 
         # Iterate backwards from the target run's index
         for i in range(index - 1, -1, -1):
-            dir = directories[i]
-            parts = dir.split('_')
+            curr_dir = directories[i]
+            if 'fail' in curr_dir.lower():   # skip e.g. "_failed" directories
+                continue
+            parts = curr_dir.split('_')
             if len(parts) > 4:  # Treat as having extra suffix
                 base_dir = '_'.join(parts[:4])
             else:
-                base_dir = dir
+                base_dir = curr_dir
 
             if base_dir not in seen_pact:
                 seen_pact.add(base_dir)
-                preceding_dirs.insert(0, dir)
+                preceding_dirs.insert(0, curr_dir)
                 required_count -= 1
                 if required_count == 0:
                     break
@@ -141,18 +145,18 @@ def get_previous_directories(directories, target_dir):
     else:
         return None
 
-def get_past5_results(runid, dir_NGS607,sc_vaf_table,demuxss):
+def get_past5_results(runid, dir_NGS607, sc_vaf_table, demuxss):
     target_dir = runid
     previous_run_dirs = get_directories(dir_NGS607)
     previous_dir_results = get_previous_directories(previous_run_dirs, target_dir)
     print(previous_dir_results)
     # Merge data from previous runs with current run #
+    merged_prev_runs = sc_vaf_table[['Gene', 'Coding', 'AAChange', 'Detected_AF', 'Sample']]
+    current_runInfo = get_PACT_ID(os.path.join(dir_NGS607, runid, demuxss))
+    current_PACTID = current_runInfo[1] # get the pact id #
+    print(current_PACTID)
+
     if previous_dir_results:
-        merged_prev_runs = sc_vaf_table[['Gene', 'Coding', 'AAChange', 'Detected_AF', 'Sample']]
-        current_runInfo = get_PACT_ID(os.path.join(dir_NGS607, runid, demuxss))
-        # get the pact id #
-        current_PACTID = current_runInfo[1]
-        print(current_PACTID) 
         # replace the samples with PACT ID of that run #
         merged_prev_runs['Sample'] = merged_prev_runs['Sample'].apply(lambda sample: transform_filename(sample, runid, current_PACTID))
 
@@ -161,8 +165,8 @@ def get_past5_results(runid, dir_NGS607,sc_vaf_table,demuxss):
             try:
                 prev_data = pd.read_csv(file_path, sep='\t')
             except FileNotFoundError:
-                 print(f"File {file_path} not found.")
-                 continue
+                print(f"File {file_path} not found.")
+                continue
             prev_runInfo = get_PACT_ID(os.path.join(dir_NGS607, prev_dir, demuxss))
             prev_runID = prev_runInfo[0]
             prev_PACTID = prev_runInfo[1]
@@ -170,11 +174,11 @@ def get_past5_results(runid, dir_NGS607,sc_vaf_table,demuxss):
             prev_data.columns = ['Gene', 'Coding', 'AAChange', 'Detected_AF', 'Sample']
             prev_data['Sample'] = prev_data['Sample'].apply(lambda sample: transform_filename(sample, prev_runID, prev_PACTID))
             merged_prev_runs = pd.concat([merged_prev_runs, prev_data])
-        else:
-            print(f"Directory '{runid}' not found in the specified path.")
+    else:
+        print(f"Directory '{runid}' not found in the specified path.")
+
     # Apply the transformation and save the merged data
     return merged_prev_runs, current_PACTID
-
 
 def plot_boxplot(previous_run_results,sc_output_past5runs_plot,current_PACTID):
     data = previous_run_results
@@ -190,28 +194,30 @@ def plot_boxplot(previous_run_results,sc_output_past5runs_plot,current_PACTID):
     print(data)
     # Create the plot
     plot = (
-    ggplot(data, aes(x='Sample', y='Detected_AF', fill='color')) +
-    geom_boxplot(alpha=0.3) +
-    stat_summary(aes(group='Sample'),fun_y=pd.Series.mean,geom='point',shape='o',size=2,color="red",fill="red")+
-    theme(
-        axis_text_x=element_text(angle=90, size=8, weight='bold'),
-        axis_text_y=element_text(size=8, weight='bold'),
-        plot_title=element_text(size=12, weight='bold'),
-        axis_title_x=element_text(size=10, weight='bold'),
-        axis_title_y=element_text(size=10, weight='bold'),
-        legend_position='none'
-    ) +
-    labs(
-        title='Distribution of SERACARE variants detected AF in current and past 5 runs',
-        x='Sample',
-        y='Detected AF'
+        p9.ggplot(data, p9.aes(x='Sample', y='Detected_AF', fill='color')) +
+        p9.geom_boxplot(alpha=0.3) +
+        p9.stat_summary(p9.aes(group='Sample'),
+                        fun_y=pd.Series.mean, geom='point',
+                        shape='o', size=2, color="red", fill="red") +
+        p9.theme(
+            axis_text_x=p9.element_text(angle=90, size=8, weight='bold'),
+            axis_text_y=p9.element_text(size=8, weight='bold'),
+            plot_title=p9.element_text(size=12, weight='bold'),
+            axis_title_x=p9.element_text(size=10, weight='bold'),
+            axis_title_y=p9.element_text(size=10, weight='bold'),
+            legend_position='none'
+        ) +
+        p9.labs(
+            title='Distribution of SERACARE variants detected AF in current and past 5 runs',
+            x='Sample',
+            y='Detected AF'
+        )
     )
-)
     # Save the plot
     output_path = sc_output_past5runs_plot
-    plot.save(output_path,width=8,height=10,dpi=300)
+    plot.save(output_path, width=8, height=10, dpi=300)
 
-def main(runid,rundir,sc_truthset,dir_NGS607):    
+def main(runid, rundir, sc_truthset, dir_NGS607):
     # Get path for Seracare annotaiton file #
     seracare_annotation_file = find('annotations.SeraCare.tsv',rundir)
     # Get the output table for current run
@@ -233,9 +239,10 @@ def main(runid,rundir,sc_truthset,dir_NGS607):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-rid','--runid', help='Path to run id',required=True)
-    parser.add_argument('-rdir','--rundir', help='Path to run directory',required=True)
-    parser.add_argument('-sct','--sctruthset', help='SeraCare Ref file',required=True)
-    parser.add_argument('-ngsdir','--ngs607dir',help='Path to all runs',required=True)
+    parser.add_argument('-rid', '--runid', help='Path to run id', required=True)
+    parser.add_argument('-rdir', '--rundir', help='Path to run directory',required=True)
+    parser.add_argument('-sct', '--sctruthset', help='SeraCare Ref file',required=True)
+    parser.add_argument('-ngsdir', '--ngs607dir', help='Path to all runs',required=True)
     args = parser.parse_args()
-    main(args.runid,args.rundir,args.sctruthset,args.ngs607dir)
+    print(args.runid, args.rundir, args.sctruthset, args.ngs607dir)
+    main(args.runid, args.rundir, args.sctruthset, args.ngs607dir)
