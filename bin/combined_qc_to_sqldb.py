@@ -9,6 +9,11 @@ import pymysql.cursors
 import sys
 import argparse
 import os
+import re
+from decimal import Decimal, InvalidOperation
+
+# EDITED: Shared missing-value set for database conversion helpers.
+MISSING_VALUES = {"", "NA", "N/A", "NULL", "NONE", "NO_DATA", "NAN"}
 
 # =====================================================
 # CONFIGURATION
@@ -104,7 +109,7 @@ def parse_combined_qc_csv(input_file):
                     'normal_mean_coverage':        get_value(normal_row, 'Average_Coverage'),
                     'normal_median_coverage':      get_value(normal_row, 'Median_Coverage'),
                     'normal_snp_overlap':          clean_snp_overlap(get_value(normal_row, 'Overlapped HOMO SNPs_Value')),
-                    'normal_concordance':          get_value(tumor_row, 'Concordance_Percent'),
+                    'normal_concordance':          get_value(normal_row, 'Concordance_Percent'),
                     'tumor_pct_target_bases_250x': clean_percentage(get_value(tumor_row, 'PCT_TARGET_BASES_250X')),
                     'tumor_exome_coverage':        get_value(tumor_row, 'Exome_Percent_Coverage'),
                     'normal_pct_target_bases_250x': clean_percentage(get_value(normal_row, 'PCT_TARGET_BASES_250X')),
@@ -187,7 +192,8 @@ def verify_table_exists(connection, table_name):
     """Verify table exists - exit if it doesn't"""
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            #cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            cursor.execute("SHOW TABLES LIKE %s", (table_name,))
             result = cursor.fetchone()
         
         if not result:
@@ -201,42 +207,116 @@ def verify_table_exists(connection, table_name):
         print(f"✗ Error checking table: {e}", file=sys.stderr)
         sys.exit(1)
 
+# EDITED: Table existence check uses a parameterized value instead of directly interpolating table_name.
 
+
+# NEW FUNC: Safely quote MySQL table names before using them in SQL strings.
+def quote_identifier(identifier):
+    """
+    Safely quote a MySQL identifier such as a table name.
+
+    SQL parameters can protect values, but not table names. Since table_name is
+    interpolated into SQL strings, restrict it to ordinary identifier characters.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_]+", identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+
+    return f"`{identifier}`"
+
+# NEW FUNC: Build the logical duplicate keys from parsed upload records.
+def get_upload_keys(parsed_data):
+    """
+    Return the logical upload keys for this file.
+
+    A duplicate should be defined as the same case in the same run, not merely
+    the same case_id appearing anywhere in the table.
+    """
+    keys = set()
+
+    for row in parsed_data:
+        run_id = str(row.get("run_id", "")).strip()
+        case_id = str(row.get("case_id", "")).strip()
+
+        if case_id in {"", "NA"}:
+            continue
+
+        if run_id in {"", "NA"}:
+            continue
+
+        keys.add((run_id, case_id))
+
+    return sorted(keys)
+
+# REPLACE FUNC: Replace the old check_for_duplicates() with this version.
 def check_for_duplicates(connection, table_name, parsed_data):
-    """Check if data already exists in table"""
+    """
+    Check whether records already exist for the same run_id + case_id pairs.
+
+    This avoids false positives where the same case_id exists from another run.
+    """
     try:
-        case_ids = set(row['case_id'] for row in parsed_data if row['case_id'] != 'NA')
-        duplicates = []
+        upload_keys = get_upload_keys(parsed_data)
+
+        if not upload_keys:
+            return []
+
+        safe_table_name = quote_identifier(table_name)
+        placeholders = ", ".join(["(%s, %s)"] * len(upload_keys))
+        params = []
+
+        for run_id, case_id in upload_keys:
+            params.extend([run_id, case_id])
+
+        query = f"""
+            SELECT run_id, case_id, COUNT(*) AS count
+            FROM {safe_table_name}
+            WHERE (run_id, case_id) IN ({placeholders})
+            GROUP BY run_id, case_id
+        """
 
         with connection.cursor() as cursor:
-            for case_id in case_ids:
-                cursor.execute(
-                    f"SELECT COUNT(*) as count FROM {table_name} WHERE case_id = %s",
-                    (case_id,)
-                )
-                count = cursor.fetchone()['count']
-                if count > 0:
-                    duplicates.append((case_id, count))
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
 
-        return duplicates
+        return [
+            (row["run_id"], row["case_id"], row["count"])
+            for row in rows
+        ]
 
     except Exception as e:
         print(f"⚠ Could not check for duplicates: {e}")
         return []
 
+# NEW FUNC: Delete existing records by run_id + case_id instead of case_id alone.
+def delete_existing_records(connection, table_name, record_keys):
+    """
+    Delete existing rows for specific run_id + case_id pairs.
 
-def delete_existing_cases(connection, table_name, case_ids):
-    """Delete existing data for specific case_ids"""
+    This prevents update mode from deleting the same case_id from unrelated runs.
+    """
     try:
-        placeholders = ','.join(['%s'] * len(case_ids))
-        query = f"DELETE FROM {table_name} WHERE case_id IN ({placeholders})"
+        if not record_keys:
+            print("✓ No existing records to delete")
+            return
+
+        safe_table_name = quote_identifier(table_name)
+        placeholders = ", ".join(["(%s, %s)"] * len(record_keys))
+        params = []
+
+        for run_id, case_id in record_keys:
+            params.extend([run_id, case_id])
+
+        query = f"""
+            DELETE FROM {safe_table_name}
+            WHERE (run_id, case_id) IN ({placeholders})
+        """
 
         with connection.cursor() as cursor:
-            cursor.execute(query, list(case_ids))
+            cursor.execute(query, params)
             deleted = cursor.rowcount
 
         connection.commit()
-        print(f"✓ Deleted {deleted} existing records for {len(case_ids)} case_id(s)")
+        print(f"✓ Deleted {deleted} existing record(s) for {len(record_keys)} run/case pair(s)")
 
     except pymysql.MySQLError as e:
         connection.rollback()
@@ -244,24 +324,135 @@ def delete_existing_cases(connection, table_name, case_ids):
         sys.exit(1)
 
 
+# def delete_existing_cases(connection, table_name, case_ids):
+#     """Delete existing data for specific case_ids"""
+#     try:
+#         placeholders = ','.join(['%s'] * len(case_ids))
+#         query = f"DELETE FROM {table_name} WHERE case_id IN ({placeholders})"
+
+#         with connection.cursor() as cursor:
+#             cursor.execute(query, list(case_ids))
+#             deleted = cursor.rowcount
+
+#         connection.commit()
+#         print(f"✓ Deleted {deleted} existing records for {len(case_ids)} case_id(s)")
+
+#     except pymysql.MySQLError as e:
+#         connection.rollback()
+#         print(f"✗ Error deleting data: {e}", file=sys.stderr)
+#         sys.exit(1)
+
+
+# NEW FUNC: Convert decimal-like percentage fields before database insert.
+def to_db_decimal(value):
+    """
+    Convert decimal-like values to Decimal, returning None for missing values.
+
+    Handles values such as:
+      98.7
+      98.7%
+      98.7 %
+      1,234.5
+      NA
+      N/A
+      NULL
+      NO_DATA
+    """
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if value.upper() in MISSING_VALUES:
+        return None
+
+    value = value.replace(",", "")
+    value = value.replace("%", "")
+    value = value.strip()
+
+    try:
+        return Decimal(value)
+
+    except InvalidOperation as e:
+        raise ValueError(f"Invalid decimal value for database insert: {value!r}") from e
+
+# NEW FUNC: Convert integer-like fields safely before database insert.
+def to_db_int(value):
+    """Convert integer-like values to int, returning None for missing values."""
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if value.upper() in MISSING_VALUES:
+        return None
+
+    return int(value.replace(",", ""))
+
+
+# EDITED: Convert float-like fields safely before database insert.
+def to_db_float(value):
+    """Convert float-like values to float, returning None for missing values."""
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if value.upper() in MISSING_VALUES:
+        return None
+
+    value = value.replace(",", "")
+    value = value.replace("%", "")
+    value = value.strip()
+
+    return float(value)
+
+
 def insert_parsed_data(connection, parsed_data, table_name):
     """Insert parsed data into the database"""
+    # insert_query = f"""
+    # INSERT INTO {table_name} 
+    # (run_id, case_id, tumor_id, normal_id, status,
+    #  tumor_status, normal_status,
+    #  tumor_mapped_reads, tumor_dedup_reads, tumor_pct_target_ge_50x,
+    #  tumor_mean_coverage, tumor_median_coverage, tumor_snp_overlap,
+    #  tumor_concordance,tumor_pct_target_bases_250x, tumor_exome_coverage,
+    #  normal_mapped_reads, normal_dedup_reads, normal_pct_target_ge_50x,
+    #  normal_mean_coverage, normal_median_coverage, normal_snp_overlap,
+    #  normal_concordance,normal_pct_target_bases_250x, normal_exome_coverage)
+    # VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    # """
+
+    # EDITED: Quote table name before interpolating it into the INSERT statement.
+    safe_table_name = quote_identifier(table_name)
+
     insert_query = f"""
-    INSERT INTO {table_name} 
+    INSERT INTO {safe_table_name}
     (run_id, case_id, tumor_id, normal_id, status,
-     tumor_status, normal_status,
-     tumor_mapped_reads, tumor_dedup_reads, tumor_pct_target_ge_50x,
-     tumor_mean_coverage, tumor_median_coverage, tumor_snp_overlap,
-     tumor_concordance,tumor_pct_target_bases_250x, tumor_exome_coverage,
-     normal_mapped_reads, normal_dedup_reads, normal_pct_target_ge_50x,
-     normal_mean_coverage, normal_median_coverage, normal_snp_overlap,
-     normal_concordance,normal_pct_target_bases_250x, normal_exome_coverage)
+    tumor_status, normal_status,
+    tumor_mapped_reads, tumor_dedup_reads, tumor_pct_target_ge_50x,
+    tumor_mean_coverage, tumor_median_coverage, tumor_snp_overlap,
+    tumor_concordance, tumor_pct_target_bases_250x, tumor_exome_coverage,
+    normal_mapped_reads, normal_dedup_reads, normal_pct_target_ge_50x,
+    normal_mean_coverage, normal_median_coverage, normal_snp_overlap,
+    normal_concordance, normal_pct_target_bases_250x, normal_exome_coverage)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
-    
-    def to_db_value(value, numeric=False):
-        if value == 'NA' or value == '' or value is None:
-            return None if numeric else 'NA'
+
+    # def to_db_value(value, numeric=False):
+    #     if value == 'NA' or value == '' or value is None:
+    #         return None if numeric else 'NA'
+    #     return value
+
+    # EDITED: Convert missing text values to None; preserve valid text values.
+    def to_db_value(value):
+        """Convert missing string values to None; preserve valid text values."""
+        if value is None:
+            return None
+
+        value = str(value).strip()
+        if value.upper() in MISSING_VALUES:
+            return None
         return value
 
     try:
@@ -269,33 +460,72 @@ def insert_parsed_data(connection, parsed_data, table_name):
 
         with connection.cursor() as cursor:
             for row in parsed_data:
+                # values = (
+                #     to_db_value(row['run_id']),
+                #     to_db_value(row['case_id']),
+                #     to_db_value(row['tumor_id']),
+                #     to_db_value(row['normal_id']),
+                #     to_db_value(row['status']),
+                #     to_db_value(row['tumor_status']),
+                #     to_db_value(row['normal_status']),
+                #     int(row['tumor_mapped_reads'])          if to_db_value(row['tumor_mapped_reads'], True)          else None,
+                #     int(row['tumor_dedup_reads'])           if to_db_value(row['tumor_dedup_reads'], True)           else None,
+                #     float(row['tumor_pct_target_ge_50x'])   if to_db_value(row['tumor_pct_target_ge_50x'], True)     else None,
+                #     float(row['tumor_mean_coverage'])       if to_db_value(row['tumor_mean_coverage'], True)         else None,
+                #     float(row['tumor_median_coverage'])     if to_db_value(row['tumor_median_coverage'], True)       else None,
+                #     float(row['tumor_snp_overlap'])         if to_db_value(row['tumor_snp_overlap'], True)           else None,
+                #     to_db_value(row['tumor_concordance']),
+                #     float(row['tumor_pct_target_bases_250x']) if to_db_value(row['tumor_pct_target_bases_250x'], True) else None,
+                #     to_db_value(row['tumor_exome_coverage']),
+                #     int(row['normal_mapped_reads'])         if to_db_value(row['normal_mapped_reads'], True)         else None,
+                #     int(row['normal_dedup_reads'])          if to_db_value(row['normal_dedup_reads'], True)          else None,
+                #     float(row['normal_pct_target_ge_50x'])  if to_db_value(row['normal_pct_target_ge_50x'], True)    else None,
+                #     float(row['normal_mean_coverage'])      if to_db_value(row['normal_mean_coverage'], True)        else None,
+                #     float(row['normal_median_coverage'])    if to_db_value(row['normal_median_coverage'], True)      else None,
+                #     float(row['normal_snp_overlap'])        if to_db_value(row['normal_snp_overlap'], True)          else None,
+                #     to_db_value(row['normal_concordance']),
+                #     float(row['normal_pct_target_bases_250x']) if to_db_value(row['normal_pct_target_bases_250x'], True) else None,
+                #     to_db_value(row['normal_exome_coverage']),
+                # )
+
+                # EDITED: Concordance fields are converted to numeric decimals before insert.
                 values = (
-                    to_db_value(row['run_id']),
-                    to_db_value(row['case_id']),
-                    to_db_value(row['tumor_id']),
-                    to_db_value(row['normal_id']),
-                    to_db_value(row['status']),
-                    to_db_value(row['tumor_status']),
-                    to_db_value(row['normal_status']),
-                    int(row['tumor_mapped_reads'])          if to_db_value(row['tumor_mapped_reads'], True)          else None,
-                    int(row['tumor_dedup_reads'])           if to_db_value(row['tumor_dedup_reads'], True)           else None,
-                    float(row['tumor_pct_target_ge_50x'])   if to_db_value(row['tumor_pct_target_ge_50x'], True)     else None,
-                    float(row['tumor_mean_coverage'])       if to_db_value(row['tumor_mean_coverage'], True)         else None,
-                    float(row['tumor_median_coverage'])     if to_db_value(row['tumor_median_coverage'], True)       else None,
-                    float(row['tumor_snp_overlap'])         if to_db_value(row['tumor_snp_overlap'], True)           else None,
-                    to_db_value(row['tumor_concordance']),
-                    float(row['tumor_pct_target_bases_250x']) if to_db_value(row['tumor_pct_target_bases_250x'], True) else None,
-                    to_db_value(row['tumor_exome_coverage']),
-                    int(row['normal_mapped_reads'])         if to_db_value(row['normal_mapped_reads'], True)         else None,
-                    int(row['normal_dedup_reads'])          if to_db_value(row['normal_dedup_reads'], True)          else None,
-                    float(row['normal_pct_target_ge_50x'])  if to_db_value(row['normal_pct_target_ge_50x'], True)    else None,
-                    float(row['normal_mean_coverage'])      if to_db_value(row['normal_mean_coverage'], True)        else None,
-                    float(row['normal_median_coverage'])    if to_db_value(row['normal_median_coverage'], True)      else None,
-                    float(row['normal_snp_overlap'])        if to_db_value(row['normal_snp_overlap'], True)          else None,
-                    to_db_value(row['normal_concordance']),
-                    float(row['normal_pct_target_bases_250x']) if to_db_value(row['normal_pct_target_bases_250x'], True) else None,
-                    to_db_value(row['normal_exome_coverage']),
+                    to_db_value(row["run_id"]),
+                    to_db_value(row["case_id"]),
+                    to_db_value(row["tumor_id"]),
+                    to_db_value(row["normal_id"]),
+                    to_db_value(row["status"]),
+                    to_db_value(row["tumor_status"]),
+                    to_db_value(row["normal_status"]),
+                    to_db_int(row["tumor_mapped_reads"]),
+                    to_db_int(row["tumor_dedup_reads"]),
+                    to_db_float(row["tumor_pct_target_ge_50x"]),
+                    to_db_float(row["tumor_mean_coverage"]),
+                    to_db_float(row["tumor_median_coverage"]),
+                    to_db_float(row["tumor_snp_overlap"]),
+                    to_db_decimal(row["tumor_concordance"]),
+                    to_db_float(row["tumor_pct_target_bases_250x"]),
+                    to_db_value(row["tumor_exome_coverage"]),
+                    to_db_int(row["normal_mapped_reads"]),
+                    to_db_int(row["normal_dedup_reads"]),
+                    to_db_float(row["normal_pct_target_ge_50x"]),
+                    to_db_float(row["normal_mean_coverage"]),
+                    to_db_float(row["normal_median_coverage"]),
+                    to_db_float(row["normal_snp_overlap"]),
+                    to_db_decimal(row["normal_concordance"]),
+                    to_db_float(row["normal_pct_target_bases_250x"]),
+                    to_db_value(row["normal_exome_coverage"]),
                 )
+
+                # DEBUG: Print the exact concordance values before database insert.
+                print(
+                    "DEBUG concordance:",
+                    "run_id=", row["run_id"],
+                    "case_id=", row["case_id"],
+                    "tumor_concordance=", repr(row["tumor_concordance"]),
+                    "normal_concordance=", repr(row["normal_concordance"]),
+                )
+
                 cursor.execute(insert_query, values)
                 records_inserted += 1
 
@@ -312,33 +542,69 @@ def insert_parsed_data(connection, parsed_data, table_name):
         sys.exit(1)
 
 
+# def get_table_stats(connection, table_name):
+#     """Get statistics about the table"""
+#     try:
+#         with connection.cursor() as cursor:
+#             cursor.execute(f"SELECT COUNT(*) as total FROM {table_name}")
+#             total = cursor.fetchone()['total']
+
+#             cursor.execute(f"""
+#                 SELECT status, COUNT(*) as count 
+#                 FROM {table_name} 
+#                 GROUP BY status
+#             """)
+#             status_counts = cursor.fetchall()
+
+#             cursor.execute(f"""
+#                 SELECT run_id, COUNT(*) as count 
+#                 FROM {table_name} 
+#                 GROUP BY run_id
+#                 ORDER BY MAX(created_at) DESC
+#                 LIMIT 5
+#             """)
+#             run_counts = cursor.fetchall()
+
+#         return {
+#             'total': total,
+#             'by_status': status_counts,
+#             'by_run': run_counts
+#         }
+
+#     except pymysql.MySQLError as e:
+#         print(f"⚠ Could not get table stats: {e}")
+#         return None
+
+# EDITED: Table stats no longer assumes the table has a created_at column.
 def get_table_stats(connection, table_name):
-    """Get statistics about the table"""
+    """Get statistics about the table."""
     try:
+        safe_table_name = quote_identifier(table_name)
+
         with connection.cursor() as cursor:
-            cursor.execute(f"SELECT COUNT(*) as total FROM {table_name}")
-            total = cursor.fetchone()['total']
+            cursor.execute(f"SELECT COUNT(*) AS total FROM {safe_table_name}")
+            total = cursor.fetchone()["total"]
 
             cursor.execute(f"""
-                SELECT status, COUNT(*) as count 
-                FROM {table_name} 
+                SELECT status, COUNT(*) AS count
+                FROM {safe_table_name}
                 GROUP BY status
             """)
             status_counts = cursor.fetchall()
 
             cursor.execute(f"""
-                SELECT run_id, COUNT(*) as count 
-                FROM {table_name} 
+                SELECT run_id, COUNT(*) AS count
+                FROM {safe_table_name}
                 GROUP BY run_id
-                ORDER BY MAX(created_at) DESC
+                ORDER BY run_id DESC
                 LIMIT 5
             """)
             run_counts = cursor.fetchall()
 
         return {
-            'total': total,
-            'by_status': status_counts,
-            'by_run': run_counts
+            "total": total,
+            "by_status": status_counts,
+            "by_run": run_counts,
         }
 
     except pymysql.MySQLError as e:
@@ -411,35 +677,45 @@ Examples:
     try:
         verify_table_exists(connection, table_name)
         
+        # EDITED: updated to use the new duplicate check that considers run_id + case_id pairs
         print("\nChecking for existing data...")
         duplicates = check_for_duplicates(connection, table_name, parsed_data)
-        
+
         if duplicates:
-            print(f"⚠ Found existing data for {len(duplicates)} case_id(s):")
-            for case_id, count in duplicates[:5]:
-                print(f"  - {case_id}: {count} records")
+            print(f"⚠ Found existing data for {len(duplicates)} run/case pair(s):")
+            for run_id, case_id, count in duplicates[:5]:
+                print(f"  - run_id={run_id}, case_id={case_id}: {count} record(s)")
+
             if len(duplicates) > 5:
                 print(f"  ... and {len(duplicates) - 5} more")
         else:
-            print("✓ No duplicate case_ids found")
+            print("✓ No duplicate run/case pairs found")
         
         # Step 3: Upload
         print(f"\n[Step 3/3] Uploading data...")
         
+        # EDITED: Update/delete logic targets specific run_id + case_id pairs instead of just case_id
         if args.update and duplicates:
-            case_ids_to_delete = [dup[0] for dup in duplicates]
-            
+            record_keys_to_delete = [
+                (run_id, case_id)
+                for run_id, case_id, count in duplicates
+            ]
+
             if not args.yes:
-                print(f"\n⚠ Update mode will delete existing data for {len(case_ids_to_delete)} case_id(s)")
+                print(
+                    f"\n⚠ Update mode will delete existing data for "
+                    f"{len(record_keys_to_delete)} run/case pair(s)"
+                )
                 response = input("Continue? Type 'yes' to confirm: ")
-                if response.lower() != 'yes':
+
+                if response.lower() != "yes":
                     print("Upload cancelled.")
                     sys.exit(0)
-            
-            delete_existing_cases(connection, table_name, case_ids_to_delete)
-        
+
+            delete_existing_records(connection, table_name, record_keys_to_delete)
+
         elif args.update and not duplicates:
-            print("No existing case_ids to update, will append data")
+            print("No existing run/case pairs to update, will append data")
         
         insert_parsed_data(connection, parsed_data, table_name)
         
