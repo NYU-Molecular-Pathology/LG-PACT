@@ -9,6 +9,7 @@ import pymysql.cursors
 import sys
 import argparse
 import os
+import re
 
 # =====================================================
 # CONFIGURATION
@@ -25,6 +26,43 @@ except ImportError:
 # =====================================================
 # PARSING FUNCTIONS
 # =====================================================
+
+# NEW FUNC: Safely validate and quote MySQL table names before using them in SQL.
+def quote_identifier(identifier):
+    """
+    Safely quote a MySQL identifier such as a table name.
+
+    SQL parameters protect values, but not table names. Since table_name is
+    interpolated into SQL strings, restrict it to ordinary identifier characters.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_]+", identifier):
+        raise ValueError(f"Unsafe SQL identifier: {identifier}")
+
+    return f"`{identifier}`"
+
+# NEW FUNC: Build the logical duplicate keys for control records.
+def get_control_upload_keys(parsed_data):
+    """
+    Return the logical upload keys for this controls file.
+
+    A duplicate control row should usually mean the same sample in the same run,
+    not merely any row from the same run_id.
+    """
+    keys = set()
+
+    for row in parsed_data:
+        run_id = str(row.get("run_id", "")).strip()
+        sample_name = str(row.get("sample_name", "")).strip()
+
+        if run_id in {"", "NA"}:
+            continue
+
+        if sample_name in {"", "NA"}:
+            continue
+
+        keys.add((run_id, sample_name))
+
+    return sorted(keys)
 
 def parse_qc_csv(input_file):
     """Parse the QC CSV file and extract required columns"""
@@ -118,18 +156,37 @@ def create_connection(config):
         sys.exit(1)
 
 
+# def verify_table_exists(connection, table_name):
+#     """Verify table exists - exit if it doesn't"""
+#     try:
+#         with connection.cursor() as cursor:
+#             cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+#             result = cursor.fetchone()
+        
+#         if not result:
+#             print(f"✗ Error: Table '{table_name}' does not exist", file=sys.stderr)
+#             print("This script only works with existing tables.")
+#             sys.exit(1)
+        
+#         print(f"✓ Table '{table_name}' exists")
+
+#     except pymysql.MySQLError as e:
+#         print(f"✗ Error checking table: {e}", file=sys.stderr)
+#         sys.exit(1)
+
+# EDITED: Table check uses a parameterized value instead of directly from table_name
 def verify_table_exists(connection, table_name):
-    """Verify table exists - exit if it doesn't"""
+    """Verify table exists - exit if it doesn't."""
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            cursor.execute("SHOW TABLES LIKE %s", (table_name,))
             result = cursor.fetchone()
-        
+
         if not result:
             print(f"✗ Error: Table '{table_name}' does not exist", file=sys.stderr)
             print("This script only works with existing tables.")
             sys.exit(1)
-        
+
         print(f"✓ Table '{table_name}' exists")
 
     except pymysql.MySQLError as e:
@@ -137,41 +194,146 @@ def verify_table_exists(connection, table_name):
         sys.exit(1)
 
 
+# def check_for_duplicates(connection, table_name, parsed_data):
+#     """Check if data already exists in table"""
+#     try:
+#         run_ids = set(row['run_id'] for row in parsed_data if row['run_id'])
+#         duplicates = []
+
+#         with connection.cursor() as cursor:
+#             for run_id in run_ids:
+#                 cursor.execute(
+#                     f"SELECT COUNT(*) as count FROM {table_name} WHERE run_id = %s",
+#                     (run_id,)
+#                 )
+#                 count = cursor.fetchone()['count']
+#                 if count > 0:
+#                     duplicates.append((run_id, count))
+
+#         return duplicates
+
+#     except Exception as e:
+#         print(f"⚠ Could not check for duplicates: {e}")
+#         return []
+
+# EDITED: Duplicate check targets specific run_id + sample_name pairs instead of just run_id.
 def check_for_duplicates(connection, table_name, parsed_data):
-    """Check if data already exists in table"""
+    """
+    Check whether records already exist for the same run_id + sample_name pairs.
+
+    This avoids false positives where the same run already exists but the
+    uploaded control sample is new.
+    """
     try:
-        run_ids = set(row['run_id'] for row in parsed_data if row['run_id'])
-        duplicates = []
+        upload_keys = get_control_upload_keys(parsed_data)
+
+        if not upload_keys:
+            return []
+
+        safe_table_name = quote_identifier(table_name)
+        placeholders = ", ".join(["(%s, %s)"] * len(upload_keys))
+        params = []
+
+        for run_id, sample_name in upload_keys:
+            params.extend([run_id, sample_name])
+
+        query = f"""
+            SELECT run_id, sample_name, COUNT(*) AS count
+            FROM {safe_table_name}
+            WHERE (run_id, sample_name) IN ({placeholders})
+            GROUP BY run_id, sample_name
+        """
 
         with connection.cursor() as cursor:
-            for run_id in run_ids:
-                cursor.execute(
-                    f"SELECT COUNT(*) as count FROM {table_name} WHERE run_id = %s",
-                    (run_id,)
-                )
-                count = cursor.fetchone()['count']
-                if count > 0:
-                    duplicates.append((run_id, count))
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
 
-        return duplicates
+        return [
+            (row["run_id"], row["sample_name"], row["count"])
+            for row in rows
+        ]
 
     except Exception as e:
         print(f"⚠ Could not check for duplicates: {e}")
         return []
 
+# NEW FUNC: Convert integer-like values safely before database insert.
+def to_db_int(value):
+    """Convert integer-like values to int, returning None for missing values."""
+    if value is None:
+        return None
 
-def delete_existing_runs(connection, table_name, run_ids):
-    """Delete existing data for specific run_ids"""
+    value = str(value).strip()
+
+    if value in {"", "NA", "N/A", "NULL", "None"}:
+        return None
+
+    return int(value.replace(",", ""))
+
+
+# NEW FUNC: Convert float-like values safely before database insert.
+def to_db_float(value):
+    """Convert float-like values to float, returning None for missing values."""
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    if value in {"", "NA", "N/A", "NULL", "None"}:
+        return None
+
+    return float(value.replace(",", "").replace("%", ""))
+
+
+# def delete_existing_runs(connection, table_name, run_ids):
+#     """Delete existing data for specific run_ids"""
+#     try:
+#         placeholders = ','.join(['%s'] * len(run_ids))
+#         query = f"DELETE FROM {table_name} WHERE run_id IN ({placeholders})"
+
+#         with connection.cursor() as cursor:
+#             cursor.execute(query, list(run_ids))
+#             deleted = cursor.rowcount
+
+#         connection.commit()
+#         print(f"✓ Deleted {deleted} existing records for {len(run_ids)} run_id(s)")
+
+#     except pymysql.MySQLError as e:
+#         connection.rollback()
+#         print(f"✗ Error deleting data: {e}", file=sys.stderr)
+#         sys.exit(1)
+
+# EDITED: Update/delete logic targets specific run_id + sample_name pairs instead of just run_id.
+def delete_existing_controls(connection, table_name, record_keys):
+    """
+    Delete existing rows for specific run_id + sample_name pairs.
+
+    This prevents update mode from deleting all controls from a run when only
+    selected control samples are being replaced.
+    """
     try:
-        placeholders = ','.join(['%s'] * len(run_ids))
-        query = f"DELETE FROM {table_name} WHERE run_id IN ({placeholders})"
+        if not record_keys:
+            print("✓ No existing control records to delete")
+            return
+
+        safe_table_name = quote_identifier(table_name)
+        placeholders = ", ".join(["(%s, %s)"] * len(record_keys))
+        params = []
+
+        for run_id, sample_name in record_keys:
+            params.extend([run_id, sample_name])
+
+        query = f"""
+            DELETE FROM {safe_table_name}
+            WHERE (run_id, sample_name) IN ({placeholders})
+        """
 
         with connection.cursor() as cursor:
-            cursor.execute(query, list(run_ids))
+            cursor.execute(query, params)
             deleted = cursor.rowcount
 
         connection.commit()
-        print(f"✓ Deleted {deleted} existing records for {len(run_ids)} run_id(s)")
+        print(f"✓ Deleted {deleted} existing record(s) for {len(record_keys)} run/sample pair(s)")
 
     except pymysql.MySQLError as e:
         connection.rollback()
@@ -179,7 +341,7 @@ def delete_existing_runs(connection, table_name, run_ids):
         sys.exit(1)
 
 
-def insert_parsed_data(connection, parsed_data, table_name):
+# def insert_parsed_data(connection, parsed_data, table_name):
     """Insert parsed data into the database"""
     insert_query = f"""
     INSERT INTO {table_name} 
@@ -217,8 +379,48 @@ def insert_parsed_data(connection, parsed_data, table_name):
         print(f"✗ Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
 
+# EDITED: Insert uses a quoted table name and safer numeric conversion helpers.
+def insert_parsed_data(connection, parsed_data, table_name):
+    """Insert parsed data into the database."""
+    safe_table_name = quote_identifier(table_name)
 
-def get_table_stats(connection, table_name):
+    insert_query = f"""
+    INSERT INTO {safe_table_name}
+    (run_id, sample_name, sample_status, mapped_reads, coverage,
+     negative_control, positive_control)
+    VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """
+
+    try:
+        records_inserted = 0
+
+        with connection.cursor() as cursor:
+            for row in parsed_data:
+                values = (
+                    row["run_id"],
+                    row["sample_name"],
+                    row["sample_status"],
+                    to_db_int(row["mapped_reads"]),
+                    to_db_float(row["coverage"]),
+                    row["negative_control"],
+                    row["positive_control"],
+                )
+                cursor.execute(insert_query, values)
+                records_inserted += 1
+
+        connection.commit()
+        print(f"✓ Successfully inserted {records_inserted} records")
+
+    except pymysql.MySQLError as e:
+        connection.rollback()
+        print(f"✗ Error inserting data: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        connection.rollback()
+        print(f"✗ Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+# def get_table_stats(connection, table_name):
     """Get statistics about the table"""
     try:
         with connection.cursor() as cursor:
@@ -245,6 +447,42 @@ def get_table_stats(connection, table_name):
             'total': total,
             'by_status': status_counts,
             'by_run': run_counts
+        }
+
+    except pymysql.MySQLError as e:
+        print(f"⚠ Could not get table stats: {e}")
+        return None
+
+# EDITED: Table stats no longer assumes created_at exists.
+def get_table_stats(connection, table_name):
+    """Get statistics about the table."""
+    try:
+        safe_table_name = quote_identifier(table_name)
+
+        with connection.cursor() as cursor:
+            cursor.execute(f"SELECT COUNT(*) AS total FROM {safe_table_name}")
+            total = cursor.fetchone()["total"]
+
+            cursor.execute(f"""
+                SELECT sample_status, COUNT(*) AS count
+                FROM {safe_table_name}
+                GROUP BY sample_status
+            """)
+            status_counts = cursor.fetchall()
+
+            cursor.execute(f"""
+                SELECT run_id, COUNT(*) AS count
+                FROM {safe_table_name}
+                GROUP BY run_id
+                ORDER BY run_id DESC
+                LIMIT 5
+            """)
+            run_counts = cursor.fetchall()
+
+        return {
+            "total": total,
+            "by_status": status_counts,
+            "by_run": run_counts,
         }
 
     except pymysql.MySQLError as e:
@@ -323,35 +561,67 @@ Examples:
     try:
         verify_table_exists(connection, table_name)
         
+        # if duplicates:
+        #     print(f"⚠ Found existing data for {len(duplicates)} run_id(s):")
+        #     for run_id, count in duplicates[:5]:
+        #         print(f"  - {run_id}: {count} records")
+        #     if len(duplicates) > 5:
+        #         print(f"  ... and {len(duplicates) - 5} more")
+
+        # EDITED: Duplicate display reports exact run_id + sample_name pairs.
         print("\nChecking for existing data...")
         duplicates = check_for_duplicates(connection, table_name, parsed_data)
-        
+
         if duplicates:
-            print(f"⚠ Found existing data for {len(duplicates)} run_id(s):")
-            for run_id, count in duplicates[:5]:
-                print(f"  - {run_id}: {count} records")
+            print(f"⚠ Found existing data for {len(duplicates)} run/sample pair(s):")
+            for run_id, sample_name, count in duplicates[:5]:
+                print(f"  - run_id={run_id}, sample_name={sample_name}: {count} record(s)")
+
             if len(duplicates) > 5:
                 print(f"  ... and {len(duplicates) - 5} more")
         else:
-            print("✓ No duplicate run_ids found")
+            print("✓ No duplicate run/sample pairs found")
         
         # Step 3: Upload
         print(f"\n[Step 3/3] Uploading data...")
         
-        if args.update and duplicates:
-            run_ids_to_delete = [dup[0] for dup in duplicates]
+        # if args.update and duplicates:
+        #     run_ids_to_delete = [dup[0] for dup in duplicates]
             
+        #     if not args.yes:
+        #         print(f"\n⚠ Update mode will delete existing data for {len(run_ids_to_delete)} run_id(s)")
+        #         response = input("Continue? Type 'yes' to confirm: ")
+        #         if response.lower() != 'yes':
+        #             print("Upload cancelled.")
+        #             sys.exit(0)
+            
+        #     delete_existing_runs(connection, table_name, run_ids_to_delete)
+        
+        # elif args.update and not duplicates:
+        #     print("No existing run_ids to update, will append data")
+
+        # EDITED: Update/delete logic targets specific run_id + sample_name pairs instead of just run_id.
+        if args.update and duplicates:
+            record_keys_to_delete = [
+                (run_id, sample_name)
+                for run_id, sample_name, count in duplicates
+            ]
+
             if not args.yes:
-                print(f"\n⚠ Update mode will delete existing data for {len(run_ids_to_delete)} run_id(s)")
+                print(
+                    f"\n⚠ Update mode will delete existing data for "
+                    f"{len(record_keys_to_delete)} run/sample pair(s)"
+                )
                 response = input("Continue? Type 'yes' to confirm: ")
-                if response.lower() != 'yes':
+
+                if response.lower() != "yes":
                     print("Upload cancelled.")
                     sys.exit(0)
-            
-            delete_existing_runs(connection, table_name, run_ids_to_delete)
-        
+
+            delete_existing_controls(connection, table_name, record_keys_to_delete)
+
         elif args.update and not duplicates:
-            print("No existing run_ids to update, will append data")
+            print("No existing run/sample pairs to update, will append data")
         
         insert_parsed_data(connection, parsed_data, table_name)
         
