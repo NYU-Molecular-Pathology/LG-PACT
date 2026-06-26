@@ -8,6 +8,8 @@ export NXF_VER NXF_ANSI_LOG
 TIMESTAMP ?= $(shell date +"%Y%m%d-%H%M%S")
 DIRNAME ?= $(notdir $(CURDIR))
 
+REMOTE_http := https://github.com/NYU-Molecular-Pathology/LG-PACT.git
+
 NXF_PROFILE := ultraviolet
 NXF_SCRIPT ?= main.nf
 NF_NGS_ONLY := main-sans-sophia.nf
@@ -22,7 +24,7 @@ SUBMITTED_BAF_ONLY := .baf-only.submitted
 
 BAF_SCRIPT := /gpfs/data/molecpathlab/development/post_pact_qc_workflow/baf_nf_sbatch.sh
 
-.PHONY: backup run submit submit-ngs-only submit-baf-only run-hpc install remove-framework clean fix-permissions
+.PHONY: backup run submit submit-ngs-only submit-baf-only run-hpc install remove-framework clean fix-permissions update remote
 
 backup:
 	@if [ -d "output" ]; then \
@@ -47,6 +49,24 @@ remove-framework:
 	./nextflow -version >/dev/null 2>&1 || true
 
 install: ./nextflow
+
+remote:
+	@echo ">>> Setting git remote origin to $(REMOTE_http)"
+	@git remote set-url origin "$(REMOTE_http)"
+
+update: remote
+	@echo ">>> Updating repo"
+	@git pull
+	@echo ">>> Updating git submodules"
+	@git submodule update --recursive --remote --init
+	@if [ -f nextflow ]; then \
+		echo ">>> Removing old Nextflow" && \
+		rm -f nextflow && \
+		echo ">>> Reinstalling Nextflow" && \
+		$(MAKE) install ; \
+	else \
+		$(MAKE) install ; \
+	fi
 
 submit: install
 	@mkdir -p "logs"
