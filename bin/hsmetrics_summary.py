@@ -15,16 +15,21 @@ def hsmetrics_summary(rundir_path):
     ##loop through each file, get sample name, line 7,8 ##
     all_dfs = []
     for file in hsmetric_files_list:
+        full_sample_id = file.split("/")[-1].split("_hs_metrics.txt")[0]
         if any(x in file for x in ["SC", "NTC", "NC"]):
-            sampleID = file.split("/")[-1].split("_hs_metrics.txt")[0].split("_")[5]
+            sampleID = full_sample_id.split("_")[5]
+            tm_number = full_sample_id.split("_")[5]
         else:
-            sampleID = file.split("/")[-1].split("_hs_metrics.txt")[0].split("_")[2]
+            sampleID = full_sample_id.split("_")[2]
+            tm_number = full_sample_id.split("_")[1]
         col_line = linecache.getline(file,7)
         col_line_lst = col_line.strip('\n').split('\t')
         col_line_lst.append("SampleID")
+        col_line_lst.append("TM_Number")
         val_line = linecache.getline(file,8)
         val_line_lst = val_line.strip('\n').split('\t')
         val_line_lst.append(sampleID)
+        val_line_lst.append(tm_number)
         res = {col_line_lst[i]: val_line_lst[i] for i in range(len(col_line_lst))}
         df = pd.DataFrame(res,index=[0])
         all_dfs.append(df)
@@ -37,8 +42,8 @@ def hsmetric_report(rundir_path):
     # need all hsmetrics columns for qc filtering
     hsmetrics_summary_output_path = rundir_path+"output/clinical/"+"hsmetrics_summary.csv"
     df_final.to_csv(hsmetrics_summary_output_path,index=False)
-    df_final_select_cols_for_htmlreport = df_final[['SampleID','ON_BAIT_BASES','MEAN_BAIT_COVERAGE','PCT_TARGET_BASES_50X','PCT_TARGET_BASES_250X','PCT_USABLE_BASES_ON_BAIT','PCT_USABLE_BASES_ON_TARGET','TOTAL_READS','PF_READS','ON_TARGET_BASES','MEAN_TARGET_COVERAGE','FOLD_80_BASE_PENALTY','AT_DROPOUT','GC_DROPOUT']]
-    hsmetric_html_df = df_final_select_cols_for_htmlreport.sort_values(by=['SampleID'])
+    df_final_select_cols_for_htmlreport = df_final[['SampleID','TM_Number','ON_BAIT_BASES','MEAN_BAIT_COVERAGE','PCT_TARGET_BASES_50X','PCT_TARGET_BASES_250X','PCT_USABLE_BASES_ON_BAIT','PCT_USABLE_BASES_ON_TARGET','TOTAL_READS','PF_READS','ON_TARGET_BASES','MEAN_TARGET_COVERAGE','FOLD_80_BASE_PENALTY','AT_DROPOUT','GC_DROPOUT']]
+    hsmetric_html_df = df_final_select_cols_for_htmlreport.sort_values(by=['TM_Number'])
 
     template_path = os.path.join(rundir_path,"template/")
     templateLoader = jinja2.FileSystemLoader(searchpath=template_path)
