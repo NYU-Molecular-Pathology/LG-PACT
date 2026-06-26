@@ -5005,9 +5005,7 @@ done_copy_samplesheet.concat(
     done_merge_all_callers_vcf,
     done_gzindex_merged_filtered_vcf,
     done_merge_snv_and_cnv_vcfs,
-    done_gzindex_merge_snv_and_cnv_vcfs,
-    done_vcf_qc_checker,
-    done_qc_to_mysql_upload
+    done_gzindex_merge_snv_and_cnv_vcfs
     )
     .into { all_done; all_done2; all_done3; all_done4 }
 
@@ -5198,69 +5196,68 @@ process batch_add_qc_hsmetrics {
     """
 }
 
-process vcf_qc_checker {
-    // Check the final VCF files for the added headers and QC metrics
-    publishDir "${params.outputDir}/vcf_qc_final", mode: 'copy'
+// process vcf_qc_checker {
+//     // Check the final VCF files for the added headers and QC metrics
+//     publishDir "${params.outputDir}/vcf_qc_final", mode: 'copy'
     
-    input:
-    val(qc_all) from done_qc.collect()
-    file(final_vcf) from final_vcfs
-    file(sample_qc_tsv) from run_qc_file2
-    file(controls_qc_tsv) from controls_qc_file
-    file(demux_ss) from demux_sample_sheet5
-    file(hsmetrics_summary_csv) from hsmetrics_summary_file
-    file(conpair_summary_csv) from conpair_summary_file
-    val('exome_cvg') from done_exome_cvg
-    file(vcf_qc_checker_dir) from vcf_qc_checker_dir
+//     input:
+//     val(qc_all) from done_qc.collect()
+//     file(final_vcf) from final_vcfs
+//     file(sample_qc_tsv) from run_qc_file2
+//     file(controls_qc_tsv) from controls_qc_file
+//     file(demux_ss) from demux_sample_sheet5
+//     file(hsmetrics_summary_csv) from hsmetrics_summary_file
+//     file(conpair_summary_csv) from conpair_summary_file
+//     val('exome_cvg') from done_exome_cvg
+//     file(vcf_qc_checker_dir) from vcf_qc_checker_dir
 
-    output:
-    file('*.csv') into vcf_qc_checker_output
-    val('vcf_qc_checker') into done_vcf_qc_checker
+//     output:
+//     file('*.csv') into vcf_qc_checker_output
+//     val('vcf_qc_checker') into done_vcf_qc_checker
     
-    script:
-    """
-    pact_id="\$(cat ${demux_ss} | sed -n '4p' | awk -F ',' '{print \$2}')" 
-    run_id="\$(echo ${PWD} | tr '/' '\n' | tail -n 1)"
+//     script:
+//     """
+//     pact_id="\$(cat ${demux_ss} | sed -n '4p' | awk -F ',' '{print \$2}')" 
+//     run_id="\$(echo ${PWD} | tr '/' '\n' | tail -n 1)"
 
-    vcf_qc_checker.py \
-        --runqc "${controls_qc_tsv}" \
-        --qc "${sample_qc_tsv}" \
-        --demux "${demux_ss}" \
-        --hsmetrics "${hsmetrics_summary_csv}" \
-        --conpair "${conpair_summary_csv}" \
-        --exome-tumor "${PWD}/output/Exome_Cvg/\${pact_id}_tumors_percentages_200.csv" \
-        --exome-normal "${PWD}/output/Exome_Cvg/\${pact_id}_normals_percentages_200.csv" \
-        --runid "\${run_id}" \
-        --merge \
-        --organize-vcfs \
-        --vcf-dir "${PWD}/output/sophia_vcf_final" \
-        --pass-dir "${vcf_qc_checker_dir}/pass" \
-        --pending-dir "${vcf_qc_checker_dir}/pending"
+//     vcf_qc_checker.py \
+//         --runqc "${controls_qc_tsv}" \
+//         --qc "${sample_qc_tsv}" \
+//         --demux "${demux_ss}" \
+//         --hsmetrics "${hsmetrics_summary_csv}" \
+//         --conpair "${conpair_summary_csv}" \
+//         --exome-tumor "${PWD}/output/Exome_Cvg/\${pact_id}_tumors_percentages_200.csv" \
+//         --exome-normal "${PWD}/output/Exome_Cvg/\${pact_id}_normals_percentages_200.csv" \
+//         --runid "\${run_id}" \
+//         --merge \
+//         --organize-vcfs \
+//         --vcf-dir "${PWD}/output/sophia_vcf_final" \
+//         --pass-dir "${vcf_qc_checker_dir}/pass" \
+//         --pending-dir "${vcf_qc_checker_dir}/pending"
 
-    """
-}
+//     """
+// }
 
-process qc_to_mysql_upload {
-    // Upload QC metrics to MySQL database
-    publishDir "${params.outputDir}/qc_mysql_upload", mode: 'copy'
+// process qc_to_mysql_upload {
+//     // Upload QC metrics to MySQL database
+//     publishDir "${params.outputDir}/qc_mysql_upload", mode: 'copy'
     
-    input:
-    val('vcf_qc_checker') from done_vcf_qc_checker
+//     input:
+//     val('vcf_qc_checker') from done_vcf_qc_checker
 
-    output:
-    file('*_parsed.csv') into mysql_upload_files
-    val('qc_to_mysql_upload') into done_qc_to_mysql_upload
+//     output:
+//     file('*_parsed.csv') into mysql_upload_files
 
-    script:
-    """
-    # Parse the controls QC CSV files and upload to MySQL
-    control_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/controls_qc.csv"
+//     script:
+//     """
+//     # Parse the controls QC CSV files and upload to MySQL
+//     control_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/controls_qc.csv"
 
-    #Parse the sample QC CSV files and upload to MySQL
-    combined_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/combined_qc.csv"
+//     #Parse the sample QC CSV files and upload to MySQL
+//     combined_qc_to_sqldb.py "${PWD}/output/vcf_qc_final/combined_qc.csv"
 
-    """
-}
+//     """
+// }
 
 process generate_hs_probes_heatmap {
     publishDir "${params.outputDir}/clinical", mode: 'copy'
