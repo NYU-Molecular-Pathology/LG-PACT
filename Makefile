@@ -180,11 +180,11 @@ submit: install
 		-J "NGS607-$(DIRNAME)" \
 		-p intellispace \
 		--time=5-00:00:00 \
-		--nodes=1 \
-		--ntasks=1 \
+		--ntasks-per-node=1 \
 		-c 8 \
-		--mem=16G \
-		--export=ALL \
+		--mem=48G \
+		--exclusive \
+		--export=HOSTNAME \
 		submit.nextflow.sbatch.sh "$(TIMESTAMP)" "$(LOGFILE)" "output/logs" "$(EXTRA_PARAMS)" "main.nf")" && \
 	baf_job_id="$$(sbatch --parsable \
 		--dependency=afterok:$${job_id} \
@@ -210,11 +210,11 @@ submit-ngs-only: install
 		-J "NGS607-$(DIRNAME)-ngs-only" \
 		-p intellispace \
 		--time=5-00:00:00 \
-		--nodes=1 \
-		--ntasks=1 \
+		--ntasks-per-node=1 \
 		-c 8 \
-		--mem=16G \
-		--export=ALL \
+		--mem=48G \
+		--exclusive \
+		--export=HOSTNAME \
 		submit.nextflow.sbatch.sh "$(TIMESTAMP)" "$(LOGFILE)" "output/logs" "$(EXTRA_PARAMS)" "$(NF_NGS_ONLY)")" && \
 	printf '%s\t%s\t%s\n' "$${job_id}" "$(TIMESTAMP)" "$(NF_NGS_ONLY)" > "$(SUBMITTED_NGS_ONLY)" && \
 	printf '>>> Submitted NGS-only driver job: %s\n' "$${job_id}" && \

@@ -5005,9 +5005,7 @@ done_copy_samplesheet.concat(
     done_merge_all_callers_vcf,
     done_gzindex_merged_filtered_vcf,
     done_merge_snv_and_cnv_vcfs,
-    done_gzindex_merge_snv_and_cnv_vcfs,
-    done_vcf_qc_checker,
-    done_qc_to_mysql_upload
+    done_gzindex_merge_snv_and_cnv_vcfs
     )
     .into { all_done; all_done2; all_done3; all_done4 }
 
