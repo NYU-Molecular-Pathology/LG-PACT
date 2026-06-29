@@ -188,6 +188,7 @@ submit: install
 		submit.nextflow.sbatch.sh "$(TIMESTAMP)" "$(LOGFILE)" "output/logs" "$(EXTRA_PARAMS)" "main.nf")" && \
 	baf_job_id="$$(sbatch --parsable \
 		--dependency=afterok:$${job_id} \
+		--kill-on-invalid-dep=yes \
 		"$(BAF_SCRIPT)" "$(DIRNAME)")" && \
 	printf '%s\t%s\t%s\n' "$${job_id}" "$(TIMESTAMP)" "$${baf_job_id}" > "$(SUBMITTED)" && \
 	printf '>>> Submitted driver job:            %s\n' "$${job_id}" && \
