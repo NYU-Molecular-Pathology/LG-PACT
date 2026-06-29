@@ -184,7 +184,7 @@ submit: install
 		-c 8 \
 		--mem=48G \
 		--exclusive \
-		--export=HOSTNAME \
+		--export=ALL \
 		submit.nextflow.sbatch.sh "$(TIMESTAMP)" "$(LOGFILE)" "output/logs" "$(EXTRA_PARAMS)" "main.nf")" && \
 	baf_job_id="$$(sbatch --parsable \
 		--dependency=afterok:$${job_id} \
@@ -214,7 +214,7 @@ submit-ngs-only: install
 		-c 8 \
 		--mem=48G \
 		--exclusive \
-		--export=HOSTNAME \
+		--export=ALL \
 		submit.nextflow.sbatch.sh "$(TIMESTAMP)" "$(LOGFILE)" "output/logs" "$(EXTRA_PARAMS)" "$(NF_NGS_ONLY)")" && \
 	printf '%s\t%s\t%s\n' "$${job_id}" "$(TIMESTAMP)" "$(NF_NGS_ONLY)" > "$(SUBMITTED_NGS_ONLY)" && \
 	printf '>>> Submitted NGS-only driver job: %s\n' "$${job_id}" && \
