@@ -15,13 +15,21 @@ import re
 # =====================================================
 # CONFIGURATION
 # =====================================================
+DB_CONFIG_DIR = "/gpfs/data/molecpathlab/bin/pact_mysql"
+sys.path.insert(0, DB_CONFIG_DIR)
+
 try:
     from db_config import DB_CONFIG, CONTROL_TABLE_NAME
 
     print("✓ Using configuration from db_config.py")
-except ImportError:
-    print("✗ Error: db_config.py not found")
-    print("Please create db_config.py from db_config_template.py")
+except ImportError as e:
+    print(f"✗ Error importing db_config: {e}")
+    print(f"  Script:      {os.path.abspath(__file__)}")
+    print(f"  CWD:         {os.getcwd()}")
+    print(f"  PYTHONPATH:  {os.environ.get('PYTHONPATH', '<unset>')}")
+    print("  sys.path:")
+    for p in sys.path:
+        print(f"    {p}")
     sys.exit(1)
 
 

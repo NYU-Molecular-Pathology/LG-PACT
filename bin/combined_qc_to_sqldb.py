@@ -16,6 +16,9 @@ from decimal import Decimal, InvalidOperation
 # Shared missing-value set for database conversion helpers.
 MISSING_VALUES = {"", "NA", "N/A", "NULL", "NONE", "NO_DATA", "NAN"}
 
+DB_CONFIG_DIR = "/gpfs/data/molecpathlab/bin/pact_mysql"
+sys.path.insert(0, DB_CONFIG_DIR)
+
 # =====================================================
 # CONFIGURATION
 # =====================================================
@@ -29,6 +32,12 @@ try:
     print("✓ Using configuration from config.py")
 except ImportError:
     print("⚠ config.py not found, using default configuration")
+    print(f"  Script:      {os.path.abspath(__file__)}")
+    print(f"  CWD:         {os.getcwd()}")
+    print(f"  PYTHONPATH:  {os.environ.get('PYTHONPATH', '<unset>')}")
+    print("  sys.path:")
+    for p in sys.path:
+        print(f"    {p}")
     DB_CONFIG = {
         "host": "localhost",
         "user": "your_username",
